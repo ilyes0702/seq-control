@@ -39,8 +39,19 @@ Check out the User Guide explanations of the methods used and the functionality.
    citation
    
 .. toctree::
+   :maxdepth: 1
    :caption: API Reference:
 
-   api
+   api/inverse_controllers/index_inverse_controllers
+   api/benchmarks/index_benchmarks
+   api/data_generation_utils/index_data_generation_utils
+   api/system_identifiers/index_system_identifiers
+   api/general_utils/index_general_utils
+   api/plotting_utils/index_plotting_utils
+   api/loss_utils/index_loss_utils
+   api/saving_and_loading_utils/index_saving_and_loading_utils
+   
+   api/training_utils/index_training_utils
+   api/validation_utils/index_validation_utils
 
 

@@ -38,3 +38,8 @@ html_theme = 'sphinx_rtd_theme'
 html_static_path = ['_static']
 
 
+html_theme_options = {
+    "navigation_depth": 2,  # Shows top headings, expands children when clicked
+    "collapse_navigation": True,  # Collapses inactive sections in the sidebar
+    "titles_only": True,  # Displays ONLY page/section titles in sidebar, hiding lower headings
+}

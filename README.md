@@ -1,7 +1,6 @@
 
 
-
-HP# SeqControl
+# SeqControl
 
 SeqControl is a Python library for in-silico data-driven control of dynamical systems. It contains utilities for training, testing, and validation of sequence models, including Reservoir Computing approaches and State-Space Model Approaches.
 
@@ -98,3 +97,5 @@ print("SeqControl successfully installed!")
 ## Contact
 
 If there are any questions, feel free to contact me via e-mail.
+
+## References
