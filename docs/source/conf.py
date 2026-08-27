@@ -6,7 +6,7 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = 'SeqControl'
+project = 'seq-control'
 copyright = '2026, Ilyes Ait Aissa'
 author = 'Ilyes Ait Aissa'
 release = '1.0.0'
@@ -23,7 +23,7 @@ templates_path = ['_templates']
 exclude_patterns = []
 
 # 1. Add your Python project source path (relative to conf.py)
-sys.path.insert(0, os.path.abspath('../../')) 
+sys.path.insert(0, os.path.abspath('../../src')) 
 
 # 2. Enable autodoc and napoleon (for Google/NumPy style docstrings)
 extensions = [
@@ -36,7 +36,6 @@ extensions = [
 
 html_theme = 'sphinx_rtd_theme'
 html_static_path = ['_static']
-
 
 html_theme_options = {
     "navigation_depth": 2,  # Shows top headings, expands children when clicked

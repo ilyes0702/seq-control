@@ -22,10 +22,7 @@ SeqControl: A Python library for data-driven control of dynamical systems
 
 In the last decades, Machine Learning (ML) applications have had a great impact on molecular
 and material science. However, every ML model requires a definition of its applicability domain. 
-We developed a python package, X, that allows users to plot the chemical space of their
-datasets. X contains smart algorithms behind which uses both structural and tailored
-similarity. Moreover, it is easy to use even for non-experts.
-For details on the background of SeqControl you can find more information here.
+We developed a python package, X, that allows users to X. X contains smart algorithms behind which uses both structural and X. Moreover, it is easy to use even for non-experts. For details on the background of SeqControl you can find more information here (Link to Thesis).
 
 Check out the User Guide explanations of the methods used and the functionality.
 
@@ -35,6 +32,9 @@ Check out the User Guide explanations of the methods used and the functionality.
    
    user_guide/installation
    user_guide/getting_started
+   user_guide/generating_training_data
+   user_guide/training_an_inverse_controller
+   user_guide/validating_an_inverse_controller
    
    citation
    

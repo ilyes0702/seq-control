@@ -1,8 +1,8 @@
-======================
-Installion
-======================
+============
+Installation
+============
 
-This tutorial guides you through installing **SeqControl** on your local machine, whether you want to use it as a dependency in another project or contribute to its development.
+This tutorial guides you through installing **seq-control** on your local machine, whether you want to use it as a dependency in another project or contribute to its development.
 
 Prerequisites
 -------------
@@ -16,20 +16,20 @@ Before installing, ensure you have the following installed on your system:
 Option 1: Quick Install via Git & pip
 --------------------------------------
 
-If you simply want to use ``SeqControl`` in your Python scripts without modifying the source code, you can install it directly from GitHub using ``pip``.
+If you simply want to use ``seq-control`` in your Python scripts without modifying the source code, you can install it directly from GitHub using ``pip``.
 
 1. Open your terminal or command prompt.
 2. Run the following command:
 
 .. code-block:: bash
 
-    pip install git+https://github.com/ilyes0702/IAA_Master_Thesis_DPE.git
+    pip install git+https://github.com/ilyes0702/seq-control.git
 
 3. To install a specific version or release tag in the future, append ``@tag_name`` to the URL:
 
 .. code-block:: bash
 
-    pip install git+https://github.com/ilyes0702/IAA_Master_Thesis_DPE.git@v1.0.0
+    pip install git+https://github.com/ilyes0702/seq-control.git@v1.0.0
 
 Option 2: Developer / Local Installation
 ---------------------------------------
@@ -43,13 +43,13 @@ First, download a local copy of the repository using ``git``:
 
 .. code-block:: bash
 
-    git clone https://github.com/ilyes0702/IAA_Master_Thesis_DPE.git
+    git clone https://github.com/ilyes0702/seq-control.git
     cd IAA_Master_Thesis_DPE
 
 Step 2: Install in Editable Mode
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Install the package using the ``-e`` flag. This links your environment to the source files in ``src/seqControl`` so that any changes you make to the code take effect immediately without re-installing:
+Install the package using the ``-e`` flag. This links your environment to the source files in ``src/seq-control`` so that any changes you make to the code take effect immediately without re-installing:
 
 .. code-block:: bash
 
@@ -65,7 +65,7 @@ Install the package using the ``-e`` flag. This links your environment to the so
 Verifying Your Installation
 ---------------------------
 
-To verify that ``SeqControl`` is correctly installed and accessible in your Python environment:
+To verify that ``seq-control`` is correctly installed and accessible in your Python environment:
 
 1. Launch a Python interactive shell:
 
@@ -77,11 +77,5 @@ To verify that ``SeqControl`` is correctly installed and accessible in your Pyth
 
 .. code-block:: python
 
-    import seqControl
-    print("SeqControl successfully installed!")
-
-3. *(Optional)* If you cloned the repository, run the test suite to ensure all components are functioning properly:
-
-.. code-block:: bash
-
-    pytest
+    import seq-control
+    print("seq-control successfully installed!")

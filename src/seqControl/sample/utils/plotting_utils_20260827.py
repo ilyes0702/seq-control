@@ -9,7 +9,6 @@ from PIL import Image
 from io import BytesIO
 import os
 import torch
-from pathlib import Path
 
 
 def plot_all_signals_overlay(
@@ -176,47 +175,27 @@ def plot_signals(
     """
     Generic plotting function for time-series or x-y signals.
 
-    The function acts as a uniform parsing layout for multi-trace system tracking data. 
-    It sets up the canvas grid framework, sequentially maps input arrays onto a scatter 
-    axis topology, and forces a strict normalized 1:1 rectangular aspect ratio overlay. 
-    It maps peripheral aesthetic labels, serializes raw canvas elements into an in-memory 
-    high-density byte stream buffer, and wraps the result into a PIL image construct for 
-    flexible external logging or automated directory routing.
+    Parameters:
+    - t (numpy.ndarray or list): The independent variable timeline array for the horizontal x-axis.
+    - signals (list of numpy.ndarray): Collection of dependent signal arrays to map along the vertical y-axis.
+    - labels (list of str, optional): Text labels matched by index sequence to identify each unique signal.
+    - title (str, optional): Overarching header title text displayed at the top of the plot grid.
+    - xlabel (str): Explicit label tracking the horizontal x-axis context (default: "Time").
+    - ylabel (str): Explicit label tracking the vertical y-axis context (default: "Value").
+    - figsize (tuple): Specific scale layout dimensions for the graphic asset canvas (default: (5, 5)).
+    - save_path (str, optional): A targeted physical file path to write the initial vector plot graphic.
+    - show (bool): Toggle flag which forces standard Matplotlib UI canvas rendering if True (default: False).
+    - filename (str, optional): Defined target image label for processing custom raster export sequences.
+    - dirname (str, optional): System subfolder location targeted for writing custom raster image files.
 
-    :param t: The independent variable timeline array for the horizontal x-axis.
-    :type t: numpy.ndarray | list
-    :param signals: Collection of dependent signal arrays to map along the vertical y-axis.
-    :type signals: list[numpy.ndarray]
-    :param labels: Text labels matched by index sequence to identify each unique signal, 
-        defaults to None.
-    :type labels: list[str], optional
-    :param title: Overarching header title text displayed at the top of the plot grid, 
-        defaults to None.
-    :type title: str, optional
-    :param xlabel: Explicit label tracking the horizontal x-axis context, 
-        defaults to "Time".
-    :type xlabel: str, optional
-    :param ylabel: Explicit label tracking the vertical y-axis context, 
-        defaults to "Value".
-    :type ylabel: str, optional
-    :param figsize: Specific scale layout dimensions for the graphic asset canvas, 
-        defaults to (5, 5).
-    :type figsize: tuple[float, float], optional
-    :param save_path: A targeted physical file path to write the initial vector plot graphic, 
-        defaults to None.
-    :type save_path: str, optional
-    :param show: Toggle flag which forces standard Matplotlib UI canvas rendering if ``True``, 
-        defaults to ``False``.
-    :type show: bool, optional
-    :param filename: Defined target image label for processing custom raster export sequences, 
-        defaults to None.
-    :type filename: str, optional
-    :param dirname: System subfolder location targeted for writing custom raster image files, 
-        defaults to None.
-    :type dirname: str, optional
+    Returns:
+    - image (PIL.Image.Image): A high-resolution raster image object version of the finalized signal canvas.
 
-    :return: A high-resolution raster image object version of the finalized signal canvas.
-    :rtype: PIL.Image.Image
+    The function acts as a uniform parsing layout for multi-trace system tracking data. It sets up 
+    the canvas grid framework, sequentially maps input arrays onto a scatter axis topology, and forces 
+    a strict normalized 1:1 rectangular aspect ratio overlay. It maps peripheral aesthetic labels, 
+    serializes raw canvas elements into an in-memory high-density byte stream buffer, and wraps the result 
+    into a PIL image construct for flexible external logging or automated directory routing.
     """
 
     fig, ax = plt.subplots(figsize=figsize, layout="constrained")
@@ -280,33 +259,30 @@ def plot_all_signals_overlay(
     show_plot=True,
     filename="all_signals_overlay.png",
 ):
-    """
-    Plots input (:math:`u`) and output (:math:`y`) overlay sequences stacked vertically,
+    """Plots input ($u$) and output ($y$) overlay sequences stacked vertically,
+
     sharing a unified horizontal time axis.
 
-    :param u_tensor: Control inputs tensor of shape ``[Num_Seqs, Seq_Len, u_Channels]`` 
-        or ``[Num_Seqs, Seq_Len]``.
-    :type u_tensor: torch.Tensor | numpy.ndarray
-    :param y_tensor: System outputs tensor of shape ``[Num_Seqs, Seq_Len, y_Channels]`` 
-        or ``[Num_Seqs, Seq_Len]``.
-    :type y_tensor: torch.Tensor | numpy.ndarray
-    :param dt: Sampling time step.
-    :type dt: float
-    :param dirname: Directory where the figure will be saved.
-    :type dirname: str
-    :param x_tensor: Optional state tensor of shape ``[Num_Seqs, Seq_Len, x_Channels]``, 
-        defaults to None.
-    :type x_tensor: torch.Tensor | numpy.ndarray, optional
-    :param plot_config: Config dictionary array returned by ``plant.get_plot_config()``, 
-        defaults to None.
-    :type plot_config: list[dict], optional
-    :param xlim: Limits for the shared x-axis (e.g., ``(-1, 25)``), defaults to None.
-    :type xlim: tuple[float, float], optional
-    :param show_plot: Whether to display the plot via ``plt.show()`` or close the figure, 
-        defaults to ``False``.
-    :type show_plot: bool, optional
-    :param filename: Name of the saved image file, defaults to None.
-    :type filename: str, optional
+    Parameters:
+    -----------
+    u_tensor : torch.Tensor or np.ndarray
+        Control inputs tensor of shape [Num_Seqs, Seq_Len, u_Channels] or [Num_Seqs, Seq_Len].
+    y_tensor : torch.Tensor or np.ndarray
+        System outputs tensor of shape [Num_Seqs, Seq_Len, y_Channels] or [Num_Seqs, Seq_Len].
+    dt : float
+        Sampling time step.
+    dirname : str
+        Directory where the figure will be saved.
+    x_tensor : torch.Tensor or np.ndarray, optional
+        Optional state tensor of shape [Num_Seqs, Seq_Len, x_Channels].
+    plot_config : list of dict, optional
+        Config dictionary array returned by plant.get_plot_config().
+    xlim : tuple of (float, float), optional
+        Limits for the shared x-axis (e.g., (-1, 25)).
+    show_plot : bool, optional
+        Whether to display the plot via plt.show() or close the figure.
+    filename : str, optional
+        Name of the saved image file.
     """
 
     # Helper function to convert PyTorch Tensors to 3D NumPy arrays [Seqs, Len, Channels]
@@ -419,6 +395,145 @@ def plot_all_signals_overlay(
     print(f"🖼️ Stacked overlay plot saved to: {save_path}")
 
 
+def plot_clustered_signals_pil(
+    t,
+    X,
+    cluster_labels,
+    centroids=None,
+    title="Clustered Time Series",
+    xlabel="Time",
+    ylabel="Value",
+    figsize=(6, 4),
+    show=False,
+    filename=None,
+    dirname=None,
+    asp=0.5
+):
+    """
+    Plots a dataset of time series colored by cluster assignment using the
+    PIL-buffer architecture of `plot_signals`.
+
+    Compatible with both KMeans-style labels (0..k-1) and DBSCAN-style
+    labels (0..k-1 plus -1 for noise/outlier points).
+
+    Parameters:
+    - t (numpy.ndarray or list): Time axis array [Seq_Len].
+    - X (torch.Tensor or numpy.ndarray): Signals array of shape [N, Seq_Len, 1] or [N, Seq_Len].
+    - cluster_labels (list or numpy.ndarray): Cluster IDs assigned to each sequence [N].
+      DBSCAN noise points should be labeled -1.
+    - centroids (numpy.ndarray, optional): Cluster barycenters of shape [n_clusters, Seq_Len, 1].
+      Should NOT include an entry for noise -- only real clusters (0..k-1).
+    - title, xlabel, ylabel, figsize, show, filename, dirname, asp: Forwarded to plot_signals architecture.
+
+    Returns:
+    - image (PIL.Image.Image): High-resolution raster image object.
+    """
+    # 1. Convert input tensors/arrays to standard 2D NumPy array [N, Seq_Len]
+    if isinstance(X, torch.Tensor):
+        X_np = X.cpu().numpy()
+    else:
+        X_np = np.array(X)
+
+    X_2d = np.squeeze(X_np)  # Ensures shape is [N, Seq_Len]
+    cluster_labels = np.array(cluster_labels)
+    unique_clusters = np.unique(cluster_labels)
+
+    # 2. Set up colormap across distinct cluster IDs (excluding noise, which
+    #    gets its own fixed gray color instead of a tab10 slot)
+    real_clusters = [c for c in unique_clusters if c != -1]
+    cmap = plt.cm.get_cmap("tab10", max(len(real_clusters), 1))
+    NOISE_COLOR = "lightgray"
+
+    # 3. Build signals and labels list matching `plot_signals` input structure
+    signals_list = []
+    labels_list = []
+
+    # We maintain a tracker to ensure each Cluster ID only creates ONE legend entry
+    added_to_legend = set()
+
+    # Pack individual time series traces
+    for seq, label in zip(X_2d, cluster_labels):
+        signals_list.append(seq)
+
+        if label not in added_to_legend:
+            labels_list.append("Noise" if label == -1 else f"Cluster {label}")
+            added_to_legend.add(label)
+        else:
+            labels_list.append(None)  # Hides duplicate trace entries in legend
+
+    # 4. Optional: Append Centroid trajectories (thick dashed lines).
+    #    Noise (-1) has no centroid and is skipped -- without this check,
+    #    NumPy's negative indexing would silently plot the LAST real
+    #    cluster's centroid a second time, mislabeled "Centroid -1".
+    if centroids is not None:
+        centroids_2d = np.squeeze(centroids)
+        for c_idx in unique_clusters:
+            if c_idx == -1:
+                continue
+            if c_idx < len(centroids_2d):
+                signals_list.append(centroids_2d[c_idx])
+                labels_list.append(f"Centroid {c_idx}")
+
+    # 5. Build Matplotlib canvas using your buffer layout
+    fig, ax = plt.subplots(figsize=figsize, layout="constrained")
+
+    num_traces = len(X_2d)
+
+    # Render individual sequence curves
+    for i in range(num_traces):
+        cluster_id = cluster_labels[i]
+        color = NOISE_COLOR if cluster_id == -1 else cmap(cluster_id % 10)
+        label_text = labels_list[i]
+
+        ax.plot(t, signals_list[i], color=color, alpha=0.45, linewidth=1.2, label=label_text)
+
+    # Render centroid lines if provided
+    if centroids is not None:
+        for i in range(num_traces, len(signals_list)):
+            label_text = labels_list[i]
+            ax.plot(t, signals_list[i], color="black", linestyle="--", linewidth=2.5, label=label_text)
+
+    # === FIXED ASPECT RATIO (Identical to your plot_signals engine) === #
+    x_range = np.diff(ax.get_xlim())[0]
+    y_range = np.diff(ax.get_ylim())[0]
+    range_ratio = x_range / y_range if y_range != 0 else 1.0
+    ax.set_aspect(asp * range_ratio)
+
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+
+    if title:
+        ax.set_title(title)
+
+    # Build clean legend without duplicates
+    handles, legend_labels = ax.get_legend_handles_labels()
+    by_label = dict(zip(legend_labels, handles))
+    if by_label:
+        ax.legend(by_label.values(), by_label.keys(), loc="upper right")
+
+    ax.grid(True, linestyle=":", alpha=0.6)
+
+    if show:
+        plt.show()
+
+    # === MEMORY BUFFER & PIL CONVERSION === #
+    buf = BytesIO()
+    plt.savefig(buf, format="PNG", dpi=600)
+    buf.seek(0)
+    plt.close()
+
+    image = Image.open(buf)
+
+    # Process custom storage if save_plot_image is available in scope
+    if "save_plot_image" in globals():
+        save_plot_image(image=image, filename=filename, dirname=dirname)
+    elif filename and dirname:
+        import os
+        os.makedirs(dirname, exist_ok=True)
+        image.save(os.path.join(dirname, filename))
+
+    return image
+
 def plot_param_heatmap(
     study,
     param_x,
@@ -430,36 +545,22 @@ def plot_param_heatmap(
     asp=1.0,
     show=False,
 ):
-    """
-    Generates a 2D objective surface heatmap for any pair of hyperparameters
+    """Generates a 2D objective surface heatmap for ANY pair of hyperparameters
+
     from an Optuna study, following the project canvas rendering pipeline.
 
-    :param study: Completed or ongoing Optuna study object.
-    :type study: optuna.study.Study
-    :param param_x: Name of the hyperparameter mapped to the horizontal x-axis.
-    :type param_x: str
-    :param param_y: Name of the hyperparameter mapped to the vertical y-axis.
-    :type param_y: str
-    :param title: Custom title header (defaults to ``"Optuna Loss Heatmap: {param_y} vs {param_x}"``), 
-        defaults to None.
-    :type title: str, optional
-    :param figsize: Canvas size layout dimensions, defaults to (6, 6).
-    :type figsize: tuple[float, float], optional
-    :param filename: Output image name (defaults to ``"{param_y}_vs_{param_x}_heatmap"``), 
-        defaults to None.
-    :type filename: str, optional
-    :param dirname: Directory path for saving the raster image, defaults to None.
-    :type dirname: str, optional
-    :param asp: Aspect ratio scalar modifier, defaults to 1.0.
-    :type asp: float, optional
-    :param show: Toggle UI canvas display, defaults to ``False``.
-    :type show: bool, optional
-
-    :return: A high-resolution raster image object version of the generated heatmap.
-    :rtype: PIL.Image.Image
-
-    :raises ValueError: If no completed trials in the study contain both requested 
-        hyperparameters ``param_x`` and ``param_y``.
+    Parameters:
+    - study (optuna.study.Study): Completed or ongoing Optuna study object.
+    - param_x (str): Name of the hyperparameter mapped to the horizontal x-axis.
+    - param_y (str): Name of the hyperparameter mapped to the vertical y-axis.
+    - title (str, optional): Custom title header (defaults to "Loss Heatmap:
+    {param_y} vs {param_x}").
+    - figsize (tuple): Canvas size layout dimensions.
+    - filename (str, optional): Output image name (defaults to
+    "{param_y}_vs_{param_x}_heatmap").
+    - dirname (str, optional): Directory path for saving the raster image.
+    - asp (float): Aspect ratio scalar modifier.
+    - show (bool): Toggle UI canvas display.
     """
     # 1. Extract all unique sampled values for param_x and param_y
     x_vals = set()
@@ -578,52 +679,11 @@ def plot_stacked(
     asp=0.33,
     hspace=0.05,
 ):
-    """
-    Generic plotting function that stacks various subplots vertically sharing a unified x-axis.
+    """Generic plotting function that stacks various subplots on top of each
 
-    Parses optional configuration structures to configure labels, line legends, aspect ratios, 
-    and y-axis titles per subplot. Converts the generated figure into an in-memory 
-    PIL image object for logging, optional file saving, or interactive rendering.
+    other.
 
-    :param t: The independent timeline variable array mapped to the shared horizontal x-axis.
-    :type t: numpy.ndarray | list
-    :param signals: Collection of signal arrays or groups of signal arrays. Each entry 
-        corresponds to a subplot row and can contain single or multiple trace arrays.
-    :type signals: list[numpy.ndarray | list[numpy.ndarray]]
-    :param plot_config: Subplot configuration list (e.g., returned by plant/model 
-        configuration methods) used to extract axis labels and subplot titles automatically, 
-        defaults to None.
-    :type plot_config: list[dict], optional
-    :param labels: Explicit list of legend label sequences corresponding to each subplot 
-        row, defaults to None.
-    :type labels: list[list[str] | str], optional
-    :param title: Main header title displayed above the top subplot row, defaults to None.
-    :type title: str, optional
-    :param xlabel: Label text tracking the horizontal x-axis context, defaults to "Time".
-    :type xlabel: str, optional
-    :param ylabel: Label or collection of labels tracking the vertical y-axis context for 
-        individual subplots, defaults to "Value".
-    :type ylabel: str | list[str], optional
-    :param save_path: Targeted file system path to export the high-resolution output figure, 
-        defaults to None.
-    :type save_path: str, optional
-    :param show: If ``True``, displays the Matplotlib UI plot window before closing, 
-        defaults to ``False``.
-    :type show: bool, optional
-    :param filename: Target filename for automated image logging utilities, defaults to None.
-    :type filename: str, optional
-    :param dirname: Subdirectory path targeted for writing automated image exports, 
-        defaults to None.
-    :type dirname: str, optional
-    :param asp: Fixed box aspect ratio (height-to-width ratio) or a list of ratios applied 
-        to each individual subplot, defaults to 0.33.
-    :type asp: float | list[float], optional
-    :param hspace: Vertical padding space separating adjacent stacked subplots, 
-        defaults to 0.05.
-    :type hspace: float, optional
-
-    :return: A high-resolution raster image object version of the stacked multi-trace plot.
-    :rtype: PIL.Image.Image
+    Can parse a `plot_config` list returned by plant/model config methods.
     """
     # === 1. PARSE PLOT CONFIG IF PROVIDED ===
     if plot_config is not None:
@@ -740,5 +800,90 @@ def plot_stacked(
     return image
     
 
+from io import BytesIO
+import numpy as np
+import matplotlib.pyplot as plt
+from PIL import Image
+from pathlib import Path
 
+def plot_heatmap(
+    matrix,
+    title=None,
+    xlabel="Timestep",
+    ylabel="State Dimension",
+    cmap="viridis",
+    figsize=(12, 6),
+    save_path=None,
+    show=False,
+    filename=None,
+    dirname=None,
+    vmin=None,
+    vmax=None,
+    colorbar_label=None,
+):
+    """
+    Generic plotting function for heatmaps of 2D matrices (e.g., B, C, or attention weights).
 
+    Parameters:
+    - matrix (numpy.ndarray or torch.Tensor): 2D matrix to plot as a heatmap (shape: [d_state, L] or [L, d_state]).
+    - title (str, optional): Title for the heatmap.
+    - xlabel (str): Label for the x-axis (default: "Timestep").
+    - ylabel (str): Label for the y-axis (default: "State Dimension").
+    - cmap (str): Colormap for the heatmap (default: "viridis").
+    - figsize (tuple): Figure size (default: (12, 6)).
+    - save_path (str, optional): Path to save the heatmap image.
+    - show (bool): Whether to display the plot (default: False).
+    - filename (str, optional): Filename for saving the heatmap.
+    - dirname (str, optional): Directory to save the heatmap.
+    - vmin (float, optional): Minimum value for the colormap.
+    - vmax (float, optional): Maximum value for the colormap.
+    - colorbar_label (str, optional): Label for the colorbar.
+
+    Returns:
+    - image (PIL.Image.Image): High-resolution raster image of the heatmap.
+    """
+
+    # Convert torch.Tensor to numpy if needed
+    if isinstance(matrix, torch.Tensor):
+        matrix = matrix.cpu().numpy()
+
+    # Create figure and axis
+    fig, ax = plt.subplots(figsize=figsize)
+
+    # Plot heatmap
+    im = ax.imshow(matrix, aspect="auto", cmap=cmap, vmin=vmin, vmax=vmax)
+
+    # Add colorbar
+    cbar = fig.colorbar(im, ax=ax)
+    if colorbar_label:
+        cbar.set_label(colorbar_label)
+
+    # Set labels and title
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    if title:
+        ax.set_title(title)
+
+    # Handle saving to a custom path
+    if save_path:
+        fig.savefig(save_path, dpi=300, bbox_inches="tight", pad_inches=0.05)
+
+    if show:
+        plt.show()
+
+    # Serialize the plot into a memory buffer
+    buf = BytesIO()
+    plt.savefig(buf, format="PNG", dpi=600)
+    buf.seek(0)
+    plt.close()
+
+    # Convert to PIL Image
+    image = Image.open(buf)
+
+    # Save to custom directory if specified
+    if filename and dirname:
+        save_path = Path(dirname) / filename
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        image.save(save_path)
+
+    return image

@@ -27,3 +27,6 @@ dwsim_bin/
 *.json
 
 Archive/
+
+.devcontainer/
+.github/
