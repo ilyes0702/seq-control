@@ -4,7 +4,7 @@
 
 import unittest
 
-from seqControl.sample.simple import add_one
+from seq_control.sample.simple import add_one
 
 
 class TestSimple(unittest.TestCase):

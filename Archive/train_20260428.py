@@ -4,10 +4,10 @@ import torch
 
 # Choose your plant model here - swap between different process models
 from src.sample.classes.PenicilinFermentationProcessTropophase import FermentationProcess, GPUFermentationProcess
-from seqControl.sample.classes.plants.SimpleLinearPlant import SimpleLinearPlant
+from seqControl.classes.plants.SimpleLinearPlant import SimpleLinearPlant
 
-from seqControl.sample.classes.controllers.MambaInverseController import MambaInverseController
-from seqControl.sample.utils.general_utils import train_controller, seed_everything, GPUtrain_controller
+from seqControl.classes.controllers.MambaInverseController import MambaInverseController
+from seqControl.utils.general_utils import train_controller, seed_everything, GPUtrain_controller
 
 # --- 1. Device Configuration --- #
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

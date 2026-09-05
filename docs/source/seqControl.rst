@@ -1,4 +1,4 @@
-seqControl package
+seq_control package
 ==================
 
 Subpackages
@@ -7,15 +7,15 @@ Subpackages
 .. toctree::
    :maxdepth: 4
 
-   seqControl.sample
+   seq_control.sample
 
 Submodules
 ----------
 
-seqControl.hyperparam\_config module
+seq_control.hyperparam\_config module
 ------------------------------------
 
-.. automodule:: seqControl.hyperparam_config
+.. automodule:: seq_control.hyperparam_config
    :members:
    :undoc-members:
    :show-inheritance:
@@ -23,7 +23,7 @@ seqControl.hyperparam\_config module
 Module contents
 ---------------
 
-.. automodule:: seqControl
+.. automodule:: seq_control
    :members:
    :undoc-members:
    :show-inheritance:

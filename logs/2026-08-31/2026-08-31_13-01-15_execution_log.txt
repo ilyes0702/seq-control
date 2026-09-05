@@ -1,0 +1,3 @@
+2026-08-31 11:01:19 - Duplicate key in file 'src/seq_control/sample/style.mplstyle', line 31 ('ytick.labelsize: large')
+2026-08-31 11:01:19 - Duplicate key in file 'src/seq_control/sample/style.mplstyle', line 47 ('xtick.labelsize: large')
+2026-08-31 11:01:19 - Duplicate key in file 'src/seq_control/sample/style.mplstyle', line 78 ('legend.fontsize: small')

@@ -1,29 +1,21 @@
-seqControl.sample package
+seq_control.sample package
 =========================
+
+Subpackages
+-----------
+
+.. toctree::
+   :maxdepth: 4
+
+   seq_control.sample.classes
 
 Submodules
 ----------
 
-seqControl.sample.config module
+seq_control.sample.config module
 -------------------------------
 
-.. automodule:: seqControl.sample.config
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-seqControl.sample.simple module
--------------------------------
-
-.. automodule:: seqControl.sample.simple
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-seqControl.sample.tutorial\_optuna module
------------------------------------------
-
-.. automodule:: seqControl.sample.tutorial_optuna
+.. automodule:: seq_control.sample.config
    :members:
    :undoc-members:
    :show-inheritance:
@@ -31,7 +23,7 @@ seqControl.sample.tutorial\_optuna module
 Module contents
 ---------------
 
-.. automodule:: seqControl.sample
+.. automodule:: seq_control.sample
    :members:
    :undoc-members:
    :show-inheritance:

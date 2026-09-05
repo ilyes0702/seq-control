@@ -1,8 +1,8 @@
 
 
-# SeqControl
+# seq_control
 
-SeqControl is a Python library for in-silico data-driven control of dynamical systems. It contains utilities for training, testing, and validation of sequence models, including Reservoir Computing approaches and State-Space Model Approaches.
+seq_control is a Python library for in-silico data-driven control of dynamical systems. It contains utilities for training, testing, and validation of sequence models, including Reservoir Computing approaches and State-Space Model Approaches.
 
 ## Resources
 
@@ -12,12 +12,12 @@ You can find the documentation of the library's features [here](https://iaa-mast
 
 ### Thesis
 
-You can find information about the background and application of SeqControl in my thesis.
+You can find information about the background and application of seq_control in my thesis.
 
 
-## Installing SeqControl
+## Installing seq_control
 
-This tutorial guides you through installing **SeqControl** on your local machine, whether you want to use it as a dependency in another project or contribute to its development.
+This tutorial guides you through installing **seq_control** on your local machine, whether you want to use it as a dependency in another project or contribute to its development.
 
 ---
 
@@ -33,7 +33,7 @@ Before installing, ensure you have the following installed on your system:
 
 ### Option 1: Quick Install via Git & pip
 
-If you simply want to use `SeqControl` in your Python scripts without modifying the source code, you can install it directly from GitHub using `pip`.
+If you simply want to use `seq_control` in your Python scripts without modifying the source code, you can install it directly from GitHub using `pip`.
 
 1. Open your terminal or command prompt.
 2. Run the following command:
@@ -66,7 +66,7 @@ cd IAA_Master_Thesis_DPE
 Step 2: Install in Editable Mode
 
 
-Install the package using the -e flag. This links your environment to the source files in src/seqControl so that any changes you make to the code take effect immediately:
+Install the package using the -e flag. This links your environment to the source files in src/seq_control so that any changes you make to the code take effect immediately:
 
 ```
 pip install -e .
@@ -84,15 +84,15 @@ Kopieren
 
 
 Verifying Your Installation
-To verify that SeqControl is correctly installed:
+To verify that seq_control is correctly installed:
 Launch a Python interactive shell:
 
 
 ```
-import seqControl
-print("SeqControl successfully installed!")
+import seq_control
+print("seq_control successfully installed!")
 ```
-## How to use SeqControl
+## How to use seq_control
 
 ## Contact
 

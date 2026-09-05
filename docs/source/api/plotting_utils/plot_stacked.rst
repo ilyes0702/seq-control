@@ -2,6 +2,6 @@
 plot_stacked
 ============
 
-.. currentmodule:: seqControl.sample.utils.plotting_utils
+.. currentmodule:: seq_control.sample.utils.plotting_utils
 
 .. autofunction:: plot_stacked

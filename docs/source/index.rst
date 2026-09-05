@@ -15,16 +15,18 @@
 
     </h3>
 
-SeqControl: A Python library for data-driven control of dynamical systems
+seq_control: A Python library for data-driven control of dynamical systems
 ===========================================================
 
 **Date**: |today| **Version**: |version|
 
 In the last decades, Machine Learning (ML) applications have had a great impact on molecular
 and material science. However, every ML model requires a definition of its applicability domain. 
-We developed a python package, X, that allows users to X. X contains smart algorithms behind which uses both structural and X. Moreover, it is easy to use even for non-experts. For details on the background of SeqControl you can find more information here (Link to Thesis).
+We developed a python package, X, that allows users to X. X contains smart algorithms behind which uses both structural and X. Moreover, it is easy to use even for non-experts. For details on the background of seq_control you can find more information here (Link to Thesis).
 
 Check out the User Guide explanations of the methods used and the functionality.
+
+   
 
 .. toctree::
    :maxdepth: 2

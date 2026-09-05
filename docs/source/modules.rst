@@ -1,7 +1,7 @@
-seqControl
+seq_control
 ==========
 
 .. toctree::
    :maxdepth: 4
 
-   seqControl
+   seq_control

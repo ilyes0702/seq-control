@@ -42,3 +42,7 @@ html_theme_options = {
     "collapse_navigation": True,  # Collapses inactive sections in the sidebar
     "titles_only": True,  # Displays ONLY page/section titles in sidebar, hiding lower headings
 }
+
+# In docs/source/conf.py
+napoleon_use_rtype = True
+autodoc_title = True
