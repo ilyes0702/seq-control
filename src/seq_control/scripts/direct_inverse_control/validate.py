@@ -1,11 +1,9 @@
-"""Simulation script for running a trained Mamba inverse controller on the
-Chemostat plant model.
+"""Simulation script validation of inverse control models.
 
 This script initializes the plant, loads a trained controller and scalers,
 generates reference trajectories (dynamic and constant), and runs the
 simulation routine.
 """
-
 
 # Import utility functions
 from seq_control.utils.validation_utils import *
@@ -25,11 +23,12 @@ from seq_control.classes.controllers.TransformerInverseController import *
 
 def main():
     # Initialize the plant model
-    dirname = "results/run_1"
+    
     hyperparam_config = hyperparam_config_TrophophasePlant   
     plant = TrophophasePlant(hyperparam_config=hyperparam_config)
+    dirname = plant.__class__.__name__
 
-
+    # Load validation data
     val_data_path = (
         "src/seq_control/results/2026-09-07/2026-09-07_10-11-58/TrophophasePlant/io/dataset/2026-09-07_10-11-58_val_io_data.pt"
     )
@@ -47,21 +46,17 @@ def main():
         steps=hyperparam_config["simulate"]["seq_len"],
         dt=hyperparam_config["training_data_cfg"]["dt"],
         y_start=0.12,       # Starts here
-        y_target=0.02,      # Smoothly descends and turns to this constant value
+        y_target=0.015,      # Smoothly descends and turns to this constant value
         tau=0.1,            # Governs speed (lower = faster drop)
         device="cuda"
     )
 
-
-    
+    # Load trained model and scalers
     model = load_model(MambaInverseController, "src/seq_control/results/2026-09-07/2026-09-07_14-35-34/TrophophasePlant_training/fold_1/2026-09-07_14-35-34_best_fold_model.pt")
 
     x_scaler = load_scaler("src/seq_control/results/2026-09-07/2026-09-07_14-35-34/TrophophasePlant_training/fold_1/scalers/2026-09-07_14-35-34_scaler_x.pkl")
 
     y_scaler = load_scaler("src/seq_control/results/2026-09-07/2026-09-07_14-35-34/TrophophasePlant_training/fold_1/scalers/2026-09-07_14-35-34_scaler_y.pkl")
-
-    print(f"x_scaler features: {getattr(x_scaler, 'n_features_in_', None)}")
-    print(f"y_scaler features: {getattr(y_scaler, 'n_features_in_', None)}")
 
     validate_controller(
         model = model,
@@ -72,30 +67,21 @@ def main():
         hyperparam_config=hyperparam_config,
         dirname = dirname,
         start_idx=2,
-        mode="open_loop",
+        mode="closed_loop",
         show_plots = True
     )
 
-    # simulate_tracking_stateful(
-    #     model=model,
-    #     plant=plant,
-    #     val_data=val_data,
-    #     hyperparam_config=hyperparam_config,
-    #     x_scaler=x_scaler,
-    #     y_scaler=y_scaler,
-    #     dirname=dirname
-    # )
-
-    # simulate_tracking_stateful_external_ref_trajectory(
-    #     model,
-    #     plant,
-    #     [r_static_y_1.squeeze()],  # List of reference trajectories, one for each output dimension. Shape: [steps] for each trajectory.
-    #     hyperparam_config,
-    #     x_scaler,
-    #     y_scaler,
-    #     dirname,
-    #     plot_individual_plots=False
-    # )
+    validate_controller_ext_ref(
+        model,
+        plant,
+        r_smooth_decay,
+        x_scaler,
+        y_scaler,
+        hyperparam_config,
+        dirname,
+        start_idx=2,
+        mode="closed_loop"
+    )
 
     # comparison_summary = simulate_tracking_stateful_multi_model(
     #     models_dict=models_dict_1,

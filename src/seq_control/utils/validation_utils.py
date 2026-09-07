@@ -20,6 +20,37 @@ import numpy as np
 import pandas as pd
 import torch
 
+import os
+
+
+def _get_channel_labels(cfg, idx, default_prefix, total_dim):
+    """
+    Extracts (ylabel, legend_base_label) for channel index `idx` from a plot_config section.
+    """
+    if not cfg:
+        return f"${default_prefix}_{{{idx+1}}}$", f"${default_prefix}_{{{idx+1}}}$"
+
+    # 1. Extract y-axis title
+    ylabel_val = cfg.get("ylabel", None)
+    if isinstance(ylabel_val, list) and idx < len(ylabel_val):
+        y_label = ylabel_val[idx]
+    elif isinstance(ylabel_val, str):
+        y_label = ylabel_val if total_dim == 1 else f"{ylabel_val}_{{{idx+1}}}"
+    else:
+        y_label = f"${default_prefix}_{{{idx+1}}}$"
+
+    # 2. Extract legend label base
+    labels_val = cfg.get("labels", None)
+    if isinstance(labels_val, list) and idx < len(labels_val):
+        base_label = labels_val[idx]
+    elif isinstance(labels_val, str):
+        base_label = labels_val
+    else:
+        base_label = y_label
+
+    return y_label, base_label
+
+
 def plot_closed_loop_trajectories(
     t,
     u_ref,
@@ -27,19 +58,41 @@ def plot_closed_loop_trajectories(
     y_ref,
     y_achieved,
     states_achieved,
-    states_ref=None,
+    states_ref,
+    plant,
     dirname="./plots",
     show=False
 ):
     """
     Renders a single stacked trajectory comparison plot combining Inputs (u), 
     Outputs (y), and States (x) for ALL sequences in the dataset using `plot_stacked`.
+    Dynamically uses axis labels and units from `plant.get_plot_config()`.
     """
     num_sequences = u_ref.shape[0]
     control_dim = u_ref.shape[-1]
     output_dim = y_ref.shape[-1]
     state_dim = states_achieved.shape[-1]
 
+    # --- Extract Plant Plot Configuration ---
+    plot_config = plant.get_plot_config() if (plant is not None and hasattr(plant, "get_plot_config")) else None
+
+    xlabel = "Time [s]"
+    u_cfg, y_cfg, x_cfg = {}, {}, {}
+
+    if plot_config:
+        for item in plot_config:
+            cols = item.get("cols", [])
+            if any(c == "t" for c in cols):
+                xl = item.get("xlabel", item.get("labels", ["Time [s]"]))
+                xlabel = xl[0] if isinstance(xl, list) else xl
+            elif any(c == "u" or c.startswith("u") for c in cols):
+                u_cfg = item
+            elif any(c == "y" or c.startswith("y") for c in cols):
+                y_cfg = item
+            elif any(c == "x" or c.startswith("x") for c in cols):
+                x_cfg = item
+
+    # --- Render Plots for Each Sequence ---
     for trace_idx in range(num_sequences):
         trace_tag = f"trace_{trace_idx + 1}"
 
@@ -51,30 +104,33 @@ def plot_closed_loop_trajectories(
         # 1. CONTROL INPUTS (u)
         # ----------------------------------------------------
         for ch in range(control_dim):
+            y_title, base_lbl = _get_channel_labels(u_cfg, ch, "u", control_dim)
             signals.append([u_ref[trace_idx, :, ch], u_applied[trace_idx, :, ch]])
-            labels.append(["$u_{ref}$", "$u_{applied}$"])
-            ylabels.append(f"$u_{{{ch+1}}}$")
+            labels.append([f"Reference", f"Model prediction"])
+            ylabels.append(y_title)
 
         # ----------------------------------------------------
         # 2. PLANT OUTPUTS (y)
         # ----------------------------------------------------
         for ch in range(output_dim):
+            y_title, base_lbl = _get_channel_labels(y_cfg, ch, "y", output_dim)
             signals.append([y_ref[trace_idx, :, ch], y_achieved[trace_idx, :, ch]])
-            labels.append(["$y_{ref}$", "$y_{achieved}$"])
-            ylabels.append(f"$y_{{{ch+1}}}$")
+            labels.append([f"{base_lbl} (ref)", f"{base_lbl} (achieved)"])
+            ylabels.append(y_title)
 
         # ----------------------------------------------------
         # 3. SYSTEM STATES (x)
         # ----------------------------------------------------
         for ch in range(state_dim):
+            y_title, base_lbl = _get_channel_labels(x_cfg, ch, "x", state_dim)
             if states_ref is not None:
                 signals.append([states_ref[trace_idx, :, ch], states_achieved[trace_idx, :, ch]])
-                labels.append(["$x_{ref}$", "$x_{achieved}$"])
+                labels.append([f"{base_lbl} (ref)", f"{base_lbl} (achieved)"])
             else:
                 signals.append([states_achieved[trace_idx, :, ch]])
-                labels.append(["$x_{achieved}$"])
+                labels.append([f"{base_lbl} (achieved)"])
             
-            ylabels.append(f"$x_{{{ch+1}}}$")
+            ylabels.append(y_title)
 
         # ----------------------------------------------------
         # RENDER COMBINED STACKED PLOT
@@ -84,23 +140,279 @@ def plot_closed_loop_trajectories(
             signals=signals,
             labels=labels,
             ylabel=ylabels,
-            title=f"Closed-Loop System Trajectories - {trace_tag}",
-            xlabel="Time [s]",
+            xlabel=xlabel,
             filename=f"closed_loop_trajectories_{trace_tag}.png",
             dirname=dirname,
             show=show
         )
 
-import os
-import numpy as np
-import torch
-import pandas as pd
+def construct_feature_vector(k, y_ref, y_src, u_src, n_y, n_u):
+    """
+    Constructs feature frame v_k at step k with zero-padding 
+    if history length is smaller than n_y or n_u.
+    """
+    N = y_ref.shape[0]
+    y_next_ref = y_ref[:, k + 1, :]
 
-import os
-import numpy as np
-import torch
-import pandas as pd
+    # Extract or pad y history (length n_y + 1)
+    if k >= n_y:
+        y_hist = y_src[:, k - n_y : k + 1, :][:, ::-1, :].reshape(N, -1)
+    else:
+        available_y = y_src[:, 0 : k + 1, :][:, ::-1, :]
+        pad_len = (n_y + 1) - available_y.shape[1]
+        pad = np.zeros((N, pad_len, y_ref.shape[-1]), dtype=np.float32)
+        y_hist = np.concatenate([available_y, pad], axis=1).reshape(N, -1)
 
+    # Extract or pad u history (length n_u)
+    if k >= n_u:
+        u_hist = u_src[:, k - n_u : k, :][:, ::-1, :].reshape(N, -1)
+    else:
+        if k > 0:
+            available_u = u_src[:, 0 : k, :][:, ::-1, :]
+            pad_len = n_u - available_u.shape[1]
+            pad = np.zeros((N, pad_len, u_src.shape[-1]), dtype=np.float32)
+            u_hist = np.concatenate([available_u, pad], axis=1).reshape(N, -1)
+        else:
+            u_hist = np.zeros((N, n_u * u_src.shape[-1]), dtype=np.float32)
+
+    return np.concatenate([y_next_ref, y_hist, u_hist], axis=1)
+
+
+def get_initial_state_from_config(hyperparam_config, batch_size=1, device="cpu"):
+    """
+    Dynamically parses initial state parameters (e.g. x10, x20, x30) from hyperparam_config["plant"].
+
+    Returns:
+    - x0_tensor (torch.Tensor or None): Shaped [batch_size, state_dim] if found, else None.
+    """
+    plant_cfg = hyperparam_config.get("plant", {})
+
+    # Extract and sort keys matching pattern 'x10', 'x20', 'x30'...
+    x0_keys = sorted(
+        [k for k in plant_cfg.keys() if k.startswith("x") and k.endswith("0") and k[1:-1].isdigit()],
+        key=lambda k: int(k[1:-1])
+    )
+
+    if x0_keys:
+        x0_values = [float(plant_cfg[k]) for k in x0_keys]
+        x0_tensor = torch.tensor(x0_values, dtype=torch.float32, device=device)
+        return x0_tensor.unsqueeze(0).repeat(batch_size, 1)
+
+    # Fallback to 'x0' or 'initial_state' explicit key if present
+    for key in ["x0", "initial_state"]:
+        if key in plant_cfg and plant_cfg[key] is not None:
+            x0_tensor = torch.tensor(plant_cfg[key], dtype=torch.float32, device=device)
+            return x0_tensor.unsqueeze(0).repeat(batch_size, 1)
+
+    return None
+
+def validate_controller_ext_ref(
+    model,
+    plant,
+    y_ref,
+    scaler_x,
+    scaler_y,
+    hyperparam_config,
+    dirname="./plots_ref",
+    start_idx=10,
+    u_ref=None,
+    mode="closed_loop",
+    show_plots=False
+):
+    """
+    Evaluates controller tracking against an arbitrary user-supplied reference 
+    trajectory y_ref (e.g. generated by `generate_reference_trajectory`).
+
+    Parameters:
+    - model: Neural network controller model.
+    - plant: Plant class instance.
+    - y_ref (Tensor or np.ndarray): Reference output target shaped [steps, output_dim],
+      [steps], or [N, steps, output_dim].
+    - scaler_x, scaler_y: Feature/target scalers (e.g. StandardScaler / MinMaxScaler).
+    - hyperparam_config (dict): Configuration containing dt, n_y, n_u, device, etc.
+    - dirname (str): Folder path to store resulting plot figures.
+    - start_idx (int): Warm-up step index where model takes over control.
+    - initial_state (Tensor or np.ndarray, optional): Starting state x_0 of the system.
+    - u_ref (Tensor or np.ndarray, optional): Nominal control inputs for warm-up phase (defaults to 0).
+    - mode (str): 'closed_loop' or 'open_loop'.
+    - show_plots (bool): Whether to display Matplotlib figures interactively.
+    """
+    os.makedirs(dirname, exist_ok=True)
+
+    device = hyperparam_config["train"]["device"]
+    dt = hyperparam_config["training_data_cfg"]["dt"]
+    n_y = hyperparam_config["training_data_cfg"]["n_y"]
+    n_u = hyperparam_config["training_data_cfg"]["n_u"]
+
+    plant_cfg = hyperparam_config.get("plant", {})
+    u_min = plant_cfg.get("u_1_hard_min", None)
+    u_max = plant_cfg.get("u_1_hard_max", None)
+
+    # --- 1. FORMAT REFERENCE TARGET (y_ref) ---
+    if isinstance(y_ref, torch.Tensor):
+        y_ref_raw = y_ref.detach().cpu()
+    else:
+        y_ref_raw = torch.tensor(y_ref, dtype=torch.float32)
+
+    # Standardize shape to [N, total_seq_len, output_dim]
+    if y_ref_raw.ndim == 1:
+        y_ref_raw = y_ref_raw.unsqueeze(0).unsqueeze(-1)
+    elif y_ref_raw.ndim == 2:
+        y_ref_raw = y_ref_raw.unsqueeze(0)
+
+    N, total_seq_len, output_dim = y_ref_raw.shape
+    control_dim = hyperparam_config["training_data_cfg"].get("control_dim", 1)
+    end_idx = total_seq_len - 1
+    y_ref_np = y_ref_raw.numpy()
+
+    # --- 2. FORMAT CONTROL REFERENCE (u_ref) ---
+    if u_ref is not None:
+        if isinstance(u_ref, torch.Tensor):
+            u_ref_np = u_ref.detach().cpu().numpy()
+        else:
+            u_ref_np = np.array(u_ref, dtype=np.float32)
+        if u_ref_np.ndim == 1:
+            u_ref_np = np.expand_dims(u_ref_np, axis=(0, -1))
+        elif u_ref_np.ndim == 2:
+            u_ref_np = np.expand_dims(u_ref_np, axis=0)
+    else:
+        u_ref_np = np.zeros((N, total_seq_len, control_dim), dtype=np.float32)
+
+    # --- 3. FORMAT INITIAL PLANT STATE ---
+
+    config_x0 = get_initial_state_from_config(hyperparam_config, batch_size=N, device=device)
+
+
+    current_state = config_x0
+    print(f"🌱 Initialized plant state from config: {current_state[0].cpu().tolist()}")
+
+
+    print("Initial state:", current_state)
+    state_dim = current_state.shape[-1]
+
+    # --- 4. ALLOCATE STORAGE ARRAYS ---
+    y_achieved = np.zeros((N, total_seq_len, output_dim), dtype=np.float32)
+    u_applied = np.zeros((N, total_seq_len, control_dim), dtype=np.float32)
+    states_achieved = np.zeros((N, total_seq_len, state_dim), dtype=np.float32)
+
+    # Log initial step k=0
+    states_achieved[:, 0, :] = current_state.cpu().numpy()
+    y_0 = plant.get_y(current_state, 0.0)
+    if y_0.ndim == 1:
+        y_0 = y_0.unsqueeze(-1)
+    y_achieved[:, 0, :] = y_0.cpu().numpy()
+
+    v_frames_scaled = []
+
+    # --- 5. PHASE 1: WARM-UP (k = 0 to start_idx - 1) ---
+    print(f"🔄 Executing warm-up (k=0 to {start_idx - 1}) using nominal inputs...")
+    for k in range(0, start_idx):
+        t_current = k * dt
+
+        y_src = y_ref_np if mode == "open_loop" else y_achieved
+        u_src = u_ref_np if mode == "open_loop" else u_applied
+
+        v_k = construct_feature_vector(k, y_ref_np, y_src, u_src, n_y, n_u)
+        v_k_scaled = scaler_x.transform(v_k)
+        v_frames_scaled.append(v_k_scaled)
+
+        u_k_np = u_ref_np[:, k, :]
+        u_applied[:, k, :] = u_k_np
+        u_k_tensor = torch.tensor(u_k_np, dtype=torch.float32, device=device)
+
+        next_state, _ = plant.step(current_state, u_k_tensor, t=t_current, dt=dt)
+        current_state = next_state
+
+        states_achieved[:, k + 1, :] = current_state.cpu().numpy()
+        y_next = plant.get_y(current_state, (k + 1) * dt)
+        if y_next.ndim == 1:
+            y_next = y_next.unsqueeze(-1)
+        y_achieved[:, k + 1, :] = y_next.cpu().numpy()
+
+    # --- 6. PHASE 2: MODEL TAKEOVER (k = start_idx to end_idx - 1) ---
+    model.eval()
+    model.to(device)
+
+    print(f"🚀 Starting sequence model takeover (k={start_idx} to {end_idx - 1})...")
+    for k in range(start_idx, end_idx):
+        t_current = k * dt
+
+        y_src = y_ref_np if mode == "open_loop" else y_achieved
+        u_src = u_ref_np if mode == "open_loop" else u_applied
+
+        v_k = construct_feature_vector(k, y_ref_np, y_src, u_src, n_y, n_u)
+        v_k_scaled = scaler_x.transform(v_k)
+        v_frames_scaled.append(v_k_scaled)
+
+        v_seq_np = np.stack(v_frames_scaled, axis=1)
+        v_seq_tensor = torch.tensor(v_seq_np, dtype=torch.float32, device=device)
+
+        with torch.no_grad():
+            u_pred_seq_scaled = model(v_seq_tensor)
+
+        u_pred_last_scaled = u_pred_seq_scaled[:, -1, :]
+        u_k_np = scaler_y.inverse_transform(u_pred_last_scaled.cpu().numpy())
+
+        if u_min is not None or u_max is not None:
+            u_k_np = np.clip(u_k_np, a_min=u_min, a_max=u_max)
+
+        u_applied[:, k, :] = u_k_np
+        u_k_tensor = torch.tensor(u_k_np, dtype=torch.float32, device=device)
+
+        next_state, _ = plant.step(current_state, u_k_tensor, t=t_current, dt=dt)
+        current_state = next_state
+
+        states_achieved[:, k + 1, :] = current_state.cpu().numpy()
+        y_next_achieved = plant.get_y(current_state, (k + 1) * dt)
+        if y_next_achieved.ndim == 1:
+            y_next_achieved = y_next_achieved.unsqueeze(-1)
+        y_achieved[:, k + 1, :] = y_next_achieved.cpu().numpy()
+
+    # --- 7. METRICS COMPUTATION ---
+    y_ref_eval = y_ref_np[:, start_idx:end_idx, :]
+    y_achieved_eval = y_achieved[:, start_idx:end_idx, :]
+
+    total_mse = float(np.mean((y_ref_eval - y_achieved_eval) ** 2))
+    total_rmse = float(np.sqrt(total_mse))
+
+    summary_df = pd.DataFrame({
+        "Metric": ["Tracking MSE", "Tracking RMSE"],
+        "Value": [total_mse, total_rmse]
+    })
+
+    print(f"\n==========================================")
+    print(f"🔁 {mode.upper()} REFERENCE TRACKING SUMMARY")
+    print(f"==========================================")
+    print(summary_df.to_string(index=False))
+    print(f"==========================================\n")
+
+    # --- 8. PLOTTING TRAJECTORIES ---
+    print(f"📊 Generating trajectory plots using plant configurations...")
+    t_full = np.arange(0, end_idx) * dt
+
+    plot_closed_loop_trajectories(
+        t=t_full,
+        u_ref=u_ref_np[:, :end_idx, :],
+        u_applied=u_applied[:, :end_idx, :],
+        y_ref=y_ref_np[:, :end_idx, :],
+        y_achieved=y_achieved[:, :end_idx, :],
+        states_achieved=states_achieved[:, :end_idx, :],
+        states_ref=None,
+        plant=plant,
+        dirname=dirname,
+        show=show_plots
+    )
+
+    return {
+        "summary_df": summary_df,
+        "metrics": {"tracking_mse": total_mse, "tracking_rmse": total_rmse},
+        "simulated_trajectories": {
+            "y_ref": y_ref_np,
+            "y_achieved": y_achieved,
+            "u_applied": u_applied,
+            "states_achieved": states_achieved
+        }
+    }
 def validate_controller(
     model,
     plant,
@@ -110,27 +422,16 @@ def validate_controller(
     hyperparam_config,
     dirname,
     start_idx,
-    mode="closed_loop",  # Options: "closed_loop" or "open_loop"
+    mode="closed_loop",
     show_plots=False
 ):
     """
-    Validation routine supporting both closed-loop and open-loop modes.
-    
-    Parameters:
-    -----------
-    mode : str
-        - "closed_loop": Feature history for model predictions comes from real-time 
-                        plant outputs (y_achieved) and applied inputs (u_applied).
-        - "open_loop"  : Feature history comes strictly from reference target 
-                        trajectories (y_ref) and reference inputs (u_ref).
+    Sequence-based validation routine that passes a growing history tensor 
+    [N, k + 1, feature_dim] to the model at each step k and drives the plant.
+    Plots all sequence trajectories using `plot_closed_loop_trajectories`.
     """
-    if mode not in ["closed_loop", "open_loop"]:
-        raise ValueError("`mode` must be either 'closed_loop' or 'open_loop'.")
-
     os.makedirs(dirname, exist_ok=True)
-    mode_tag = mode.upper().replace("_", "-")
     
-    # --- 1. CONFIGURATION & HYPERPARAMETERS ---
     device = hyperparam_config["train"]["device"]
     dt = hyperparam_config["training_data_cfg"]["dt"]
     n_y = hyperparam_config["training_data_cfg"]["n_y"]
@@ -141,9 +442,9 @@ def validate_controller(
     u_max = plant_cfg.get("u_1_hard_max", None)
 
     # Load trajectory dataset
-    u_ref_raw = dataset_io["u"].to(dtype=torch.float32)       # [N, total_seq_len, control_dim]
-    y_ref_raw = dataset_io["y"].to(dtype=torch.float32)       # [N, total_seq_len, output_dim]
-    states_raw = dataset_io["states"].to(dtype=torch.float32) # [N, total_seq_len, state_dim] OR [N, state_dim]
+    u_ref_raw = dataset_io["u"].to(dtype=torch.float32)
+    y_ref_raw = dataset_io["y"].to(dtype=torch.float32)
+    states_raw = dataset_io["states"].to(dtype=torch.float32)
 
     N, total_seq_len, output_dim = y_ref_raw.shape
     control_dim = u_ref_raw.shape[-1]
@@ -151,106 +452,96 @@ def validate_controller(
 
     y_ref_np = y_ref_raw.numpy()
     u_ref_np = u_ref_raw.numpy()
-    
     has_state_ref = (states_raw.ndim == 3)
     states_ref_np = states_raw.numpy() if has_state_ref else None
 
-    # --- 2. INITIALIZATION & STORAGE ARRAYS ---
+    # Storage arrays
     y_achieved = np.zeros((N, total_seq_len, output_dim), dtype=np.float32)
     u_applied = np.zeros((N, total_seq_len, control_dim), dtype=np.float32)
     
-    # Extract true initial state at k = 0
     initial_state = states_raw[:, 0, :] if has_state_ref else states_raw.clone()
     current_state = initial_state.to(device)
     state_dim = current_state.shape[-1]
-    
     states_achieved = np.zeros((N, total_seq_len, state_dim), dtype=np.float32)
 
-    # Log initial state x_0 and initial plant output y_0
+    # Initial state logging
     states_achieved[:, 0, :] = current_state.cpu().numpy()
     y_0 = plant.get_y(current_state, 0.0)
     if y_0.ndim == 1:
         y_0 = y_0.unsqueeze(-1)
     y_achieved[:, 0, :] = y_0.cpu().numpy()
 
-    # --- 3. PHASE 1: OPEN-LOOP WARM-UP (k = 0 to start_idx - 1) ---
-    print(f"🔄 [{mode_tag}] Executing warm-up (k=0 to {start_idx - 1}) using reference inputs...")
-    
+    v_frames_scaled = []
+
+    # --- 1. PHASE 1: WARM-UP (k = 0 to start_idx - 1) ---
+    print(f"🔄 Executing warm-up (k=0 to {start_idx - 1}) using reference inputs...")
     for k in range(0, start_idx):
         t_current = k * dt
         
-        # Apply ground-truth reference control input
+        y_src = y_ref_np if mode == "open_loop" else y_achieved
+        u_src = u_ref_np if mode == "open_loop" else u_applied
+        v_k = construct_feature_vector(k, y_ref_np, y_src, u_src, n_y, n_u)
+        v_k_scaled = scaler_x.transform(v_k)
+        v_frames_scaled.append(v_k_scaled)
+
         u_k_np = u_ref_np[:, k, :]
         u_applied[:, k, :] = u_k_np
         u_k_tensor = torch.tensor(u_k_np, dtype=torch.float32, device=device)
 
-        # Step plant dynamics
         next_state, _ = plant.step(current_state, u_k_tensor, t=t_current, dt=dt)
         current_state = next_state
 
-        # Record resulting state and plant output at k + 1
         states_achieved[:, k + 1, :] = current_state.cpu().numpy()
         y_next = plant.get_y(current_state, (k + 1) * dt)
         if y_next.ndim == 1:
             y_next = y_next.unsqueeze(-1)
         y_achieved[:, k + 1, :] = y_next.cpu().numpy()
 
-    # --- 4. PHASE 2: MODEL CONTROL ROLLOUT (k = start_idx to end_idx - 1) ---
+    # --- 2. PHASE 2: MODEL TAKEOVER (k = start_idx to end_idx - 1) ---
     model.eval()
     model.to(device)
 
-    print(f"🚀 [{mode_tag}] Starting model execution (k={start_idx} to {end_idx - 1})...")
+    print(f"🚀 Starting sequence model execution (k={start_idx} to {end_idx - 1})...")
 
     for k in range(start_idx, end_idx):
         t_current = k * dt
 
-        # Select history sources depending on mode
-        if mode == "open_loop":
-            # Open-Loop: Assemble features strictly from reference target signals
-            y_next_ref = y_ref_np[:, k + 1, :]
-            y_hist_flat = y_ref_np[:, k - n_y : k + 1, :][:, ::-1, :].reshape(N, -1)
-            u_hist_flat = u_ref_np[:, k - n_u : k, :][:, ::-1, :].reshape(N, -1)
-        else:
-            # Closed-Loop: Assemble features from actual plant measurements & applied inputs
-            y_next_ref = y_ref_np[:, k + 1, :]
-            y_hist_flat = y_achieved[:, k - n_y : k + 1, :][:, ::-1, :].reshape(N, -1)
-            u_hist_flat = u_applied[:, k - n_u : k, :][:, ::-1, :].reshape(N, -1)
+        y_src = y_ref_np if mode == "open_loop" else y_achieved
+        u_src = u_ref_np if mode == "open_loop" else u_applied
 
-        v_k = np.concatenate([y_next_ref, y_hist_flat, u_hist_flat], axis=1)
-
-        # Scaler transformation and model prediction
+        v_k = construct_feature_vector(k, y_ref_np, y_src, u_src, n_y, n_u)
         v_k_scaled = scaler_x.transform(v_k)
-        v_k_tensor = torch.tensor(v_k_scaled, dtype=torch.float32, device=device).unsqueeze(1)
+        v_frames_scaled.append(v_k_scaled)
+
+        v_seq_np = np.stack(v_frames_scaled, axis=1)
+        v_seq_tensor = torch.tensor(v_seq_np, dtype=torch.float32, device=device)
 
         with torch.no_grad():
-            u_pred_scaled = model(v_k_tensor).squeeze(1)
+            u_pred_seq_scaled = model(v_seq_tensor)
 
-        # Inverse transformation and saturation clipping
-        u_k_np = scaler_y.inverse_transform(u_pred_scaled.cpu().numpy())
+        u_pred_last_scaled = u_pred_seq_scaled[:, -1, :]
+
+        u_k_np = scaler_y.inverse_transform(u_pred_last_scaled.cpu().numpy())
         if u_min is not None or u_max is not None:
             u_k_np = np.clip(u_k_np, a_min=u_min, a_max=u_max)
 
         u_applied[:, k, :] = u_k_np
         u_k_tensor = torch.tensor(u_k_np, dtype=torch.float32, device=device)
 
-        # Step plant dynamics with predicted control input
         next_state, _ = plant.step(current_state, u_k_tensor, t=t_current, dt=dt)
         current_state = next_state
 
-        # Log state and output at k + 1
         states_achieved[:, k + 1, :] = current_state.cpu().numpy()
         y_next_achieved = plant.get_y(current_state, (k + 1) * dt)
         if y_next_achieved.ndim == 1:
             y_next_achieved = y_next_achieved.unsqueeze(-1)
         y_achieved[:, k + 1, :] = y_next_achieved.cpu().numpy()
 
-    # --- 5. METRICS COMPUTATION (Evaluated on Model Phase) ---
+    # --- 3. METRICS COMPUTATION ---
     y_ref_eval = y_ref_np[:, start_idx:end_idx, :]
     y_achieved_eval = y_achieved[:, start_idx:end_idx, :]
     u_ref_eval = u_ref_np[:, start_idx:end_idx, :]
     u_applied_eval = u_applied[:, start_idx:end_idx, :]
-    states_achieved_eval = states_achieved[:, start_idx:end_idx, :]
-    states_ref_eval = states_ref_np[:, start_idx:end_idx, :] if has_state_ref else None
 
     total_mse = float(np.mean((y_ref_eval - y_achieved_eval) ** 2))
     total_rmse = float(np.sqrt(total_mse))
@@ -262,12 +553,13 @@ def validate_controller(
     })
 
     print(f"\n==========================================")
-    print(f"🔁 {mode_tag} VALIDATION SUMMARY")
+    print(f"🔁 {mode.upper()} SEQUENCE VALIDATION SUMMARY")
     print(f"==========================================")
     print(summary_df.to_string(index=False))
     print(f"==========================================\n")
 
-    # --- 6. PLOTTING ---
+    # --- 4. PLOTTING ALL SEQUENCES ---
+    print(f"📊 Generating plots for all {N} sequences using `plot_closed_loop_trajectories`...")
     t_full = np.arange(0, end_idx) * dt
 
     plot_closed_loop_trajectories(
@@ -276,9 +568,10 @@ def validate_controller(
         u_applied=u_applied[:, :end_idx, :],
         y_ref=y_ref_np[:, :end_idx, :],
         y_achieved=y_achieved[:, :end_idx, :],
-        states_ref=states_ref_np[:, :end_idx, :] if has_state_ref else None,
         states_achieved=states_achieved[:, :end_idx, :],
-        dirname=os.path.join(dirname, mode),
+        states_ref=states_ref_np[:, :end_idx, :] if has_state_ref else None,
+        plant=plant,
+        dirname=dirname,
         show=show_plots
     )
 

@@ -749,7 +749,3 @@ def plot_stacked(
         save_plot_image(image=image, filename=filename, dirname=dirname)
 
     return image
-    
-
-
-
