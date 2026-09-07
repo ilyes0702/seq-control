@@ -166,7 +166,7 @@ class MambaSurrogateModel(nn.Module):
         )
         
         # 4. Map latent features back to actuator control dimensions
-        self.output_proj = nn.Linear(self.d_model, self.input_dim)
+        self.output_proj = nn.Linear(self.d_model, self.output_dim)
         
         # Inference memory state buffers
         self.conv_state = None
@@ -246,3 +246,126 @@ class MambaSurrogateModel(nn.Module):
     @property
     def mamba_dt(self):
         return getattr(self.core, "extracted_dt", getattr(self.core, "dt", None))
+
+import torch
+import torch.nn as nn
+import torch.optim as optim
+
+class MambaGradientMPC:
+    def __init__(
+        self,
+        surrogate_model,
+        horizon=15,
+        num_iters=20,
+        lr=0.05,
+        u_min=None,
+        u_max=None,
+        weight_y=10.0,
+        weight_u=0.01,
+        weight_du=0.1,
+        device="cuda"
+    ):
+        """
+        Gradient-Based MPC controller using PyTorch autograd over a Mamba surrogate model.
+
+        Parameters:
+        - surrogate_model: Trained MambaSurrogateModel instance.
+        - horizon (H): Lookahead prediction horizon steps.
+        - num_iters: Gradient optimization steps per control cycle.
+        - lr: Learning rate for updating control action tensor.
+        - u_min, u_max: Hard bounds for control actuators.
+        - weight_y, weight_u, weight_du: Penalty weights for tracking error, input magnitude, and slew rate.
+        """
+        self.model = surrogate_model
+        self.H = horizon
+        self.num_iters = num_iters
+        self.lr = lr
+        self.u_min = u_min
+        self.u_max = u_max
+        
+        self.w_y = weight_y
+        self.w_u = weight_u
+        self.w_du = weight_du
+        self.device = device
+        
+        # Freeze surrogate model parameters (we only optimize control inputs)
+        self.model.eval()
+        for param in self.model.parameters():
+            param.requires_grad = False
+
+    def solve(self, history_seq, y_ref_horizon, u_prev=None):
+        """
+        Solves for the optimal control sequence over horizon H.
+
+        Parameters:
+        - history_seq: Tensor [1, history_len, d_model] containing warm-up feature history.
+        - y_ref_horizon: Tensor [1, H, output_dim] reference trajectory for the next H steps.
+        - u_prev: Tensor [1, control_dim] control action applied in the previous timestep (k-1).
+
+        Returns:
+        - u_optimal_next: Tensor [control_dim] control action to apply at current timestep k.
+        """
+        control_dim = self.model.output_dim
+        
+        # 1. Warm-start control trajectory over horizon H (shift previous solution or initialize zeros)
+        u_traj = torch.zeros((1, self.H, control_dim), device=self.device, requires_grad=True)
+        optimizer = optim.Adam([u_traj], lr=self.lr)
+
+        best_u_traj = u_traj.detach().clone()
+        min_cost = float("inf")
+
+        # 2. Optimization loop over control actions
+        for _ in range(self.num_iters):
+            optimizer.zero_grad()
+            
+            # Clamp candidate controls to physical bounds
+            if self.u_min is not None or self.u_max is not None:
+                u_clamped = torch.clamp(u_traj, self.u_min, self.u_max)
+            else:
+                u_clamped = u_traj
+
+            # 3. Roll out Mamba model predictions over horizon H
+            # Predict future outputs y_pred using Mamba (either full sequence forward or recurrent step)
+            y_pred = self._rollout(history_seq, u_clamped)
+
+            # 4. Compute MPC Cost Function
+            # Tracking Loss
+            cost_y = self.w_y * torch.mean((y_pred - y_ref_horizon) ** 2)
+            
+            # Control Effort Loss
+            cost_u = self.w_u * torch.mean(u_clamped ** 2)
+            
+            # Smoothness / Slew Rate Loss (u_k - u_{k-1})
+            if u_prev is not None:
+                u_full = torch.cat([u_prev.unsqueeze(1), u_clamped], dim=1)
+                du = u_full[:, 1:, :] - u_full[:, :-1, :]
+            else:
+                du = u_clamped[:, 1:, :] - u_clamped[:, :-1, :]
+            cost_du = self.w_du * torch.mean(du ** 2)
+
+            total_loss = cost_y + cost_u + cost_du
+
+            # 5. Backpropagate gradients to control inputs
+            total_loss.backward()
+            optimizer.step()
+
+            if total_loss.item() < min_cost:
+                min_cost = total_loss.item()
+                best_u_traj = u_clamped.detach().clone()
+
+        # Return the first control action in the optimized sequence (Receding Horizon)
+        u_optimal_next = best_u_traj[0, 0, :]
+        return u_optimal_next
+
+    def _rollout(self, history_seq, u_horizon):
+        """
+        Simulates future trajectory predictions across the horizon.
+        """
+        # If your model accepts full sequences directly:
+        # Concatenate history features with candidate control sequences
+        # Note: Adapt feature vector construction to match your surrogate's exact input format
+        full_seq = torch.cat([history_seq, u_horizon], dim=1)
+        y_pred_full = self.model(full_seq)
+        
+        # Return only the future horizon segment [1, H, output_dim]
+        return y_pred_full[:, -self.H:, :]

@@ -41,21 +41,32 @@ if __name__ == "__main__":
     train_data_sw_ic = torch.load(train_data_sw_ic_path, weights_only=True)
 
     train_data_sw_sysid_path = (
-           "src/seq_control/results/2026-09-07/2026-09-07_10-11-58/TrophophasePlant/sw_ic/dataset/2026-09-07_10-11-58_sw_ic_validation_data.pt"
+           "src/seq_control/results/2026-09-07/2026-09-07_10-11-58/TrophophasePlant/sw_sysid/dataset/2026-09-07_10-11-58_sw_sysid_training_data.pt"
         )
     train_data_sw_sysid = torch.load(train_data_sw_sysid_path, weights_only=True)
  
     # Initialize the inverse controller.
     controller = MambaInverseController(hyperparam_config=hyperparam_config)
 
+    # train_inverse_controller(
+    #     model=controller,
+    #     plant=plant,
+    #     sw_ic_dataset=train_data_sw_ic,
+    #     hyperparam_config=hyperparam_config,
+    #     dirname=dirname,
+    #     show_plots=True
+    # )  
+
+    surr = MambaInverseController(hyperparam_config=hyperparam_config)
+    # Surrogate model
     train_inverse_controller(
-        model=controller,
-        plant=plant,
-        sw_ic_dataset=train_data_sw_ic,
-        hyperparam_config=hyperparam_config,
-        dirname=dirname,
-        show_plots=True
-    )  
+            model=surr,
+            plant=plant,
+            sw_ic_dataset=train_data_sw_sysid,
+            hyperparam_config=hyperparam_config,
+            dirname=dirname,
+            show_plots=True
+        )  
 
     # run_optuna_study(
     #     n_trials=10,
