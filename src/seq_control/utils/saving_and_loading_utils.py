@@ -373,7 +373,7 @@ def save_plot_image(image, filename, dirname):
     return()
 
 #=== FUNCTION TO SAVE TRAINING DATASET TENSORS ===#
-def save_training_dataset(data_dict, dirname, filename="training_data"):
+def save_dataset(data_dict, dirname, filename):
     """
     Save training dataset tensors to disk using PyTorch serialization.
 
@@ -423,6 +423,98 @@ def save_training_dataset(data_dict, dirname, filename="training_data"):
     print(f"📦 Dataset Tensors saved to: {full_path}")
 
 
+def save_dataset_with_csv(data_dict, dirname, filename):
+    """
+    Save training dataset tensors to disk using PyTorch serialization and CSV export.
+
+    This function serializes a dictionary of training dataset tensors/arrays into
+    a PyTorch binary file (.pt) and exports each entry to a CSV file. For 3D 
+    sequence tensors [N, seq_len, features], data is flattened with explicit 
+    'sample_id' and 'step_id' tracking columns.
+
+    :param data_dict: Dictionary containing PyTorch tensors or NumPy arrays
+                      (e.g., {'X_raw': x_tensor, 'Y_raw': y_tensor}).
+    :type data_dict: dict
+    :param dirname: Subdirectory segment within the timestamped output path.
+    :type dirname: str
+    :param filename: Base name for dataset files without extensions.
+                      Defaults to "training_data".
+    :type filename: str, optional
+
+    :returns: None
+    :rtype: NoneType
+
+    :raises OSError: If directory creation fails or write permissions are denied.
+    :raises RuntimeError: If PyTorch encounters a serialization error.
+    """
+    target_dir = f"src/seq_control/results/{default_date}/{default_date_and_time}/{dirname}/dataset/"
+    os.makedirs(target_dir, exist_ok=True)
+    max_path_length = 255
+
+    # --- 1. SAVE PYTORCH BINARY FILE (.pt) ---
+    pt_filename = f"{default_date_and_time}_{filename}.pt"
+    full_pt_path = os.path.join(target_dir, pt_filename)
+
+    if len(full_pt_path) > max_path_length:
+        basename, ext = os.path.splitext(pt_filename)
+        allowed_len = max_path_length - len(os.path.join(target_dir, ext))
+        pt_filename = basename[:allowed_len] + ext
+        full_pt_path = os.path.join(target_dir, pt_filename)
+
+    torch.save(data_dict, full_pt_path)
+    print(f"📦 Dataset Tensors saved to: {full_pt_path}")
+
+    # --- 2. EXPORT CSV FILES (.csv) ---
+    for key, val in data_dict.items():
+        # Convert PyTorch Tensors or list primitives to NumPy
+        if isinstance(val, torch.Tensor):
+            arr = val.detach().cpu().numpy()
+        elif isinstance(val, np.ndarray):
+            arr = val
+        else:
+            try:
+                arr = np.array(val)
+            except Exception as e:
+                print(f"⚠️ Skipping CSV export for key '{key}': {e}")
+                continue
+
+        # Format tabular DataFrames based on array dimensionality
+        if arr.ndim == 1:
+            df = pd.DataFrame(arr, columns=[f"{key}_0"])
+            
+        elif arr.ndim == 2:
+            cols = [f"{key}_f{i}" for i in range(arr.shape[1])]
+            df = pd.DataFrame(arr, columns=cols)
+            
+        elif arr.ndim == 3:
+            # Flatten [N_samples, seq_len, N_features] into tabular rows
+            n_samples, seq_len, n_features = arr.shape
+
+            sample_ids = np.repeat(np.arange(n_samples), seq_len)
+            step_ids = np.tile(np.arange(seq_len), n_samples)
+            flat_data = arr.reshape(-1, n_features)
+
+            feature_cols = [f"{key}_f{i}" for i in range(n_features)]
+            df = pd.DataFrame(flat_data, columns=feature_cols)
+            df.insert(0, "step_id", step_ids)
+            df.insert(0, "sample_id", sample_ids)
+            
+        else:
+            print(f"⚠️ Key '{key}' has unsupported dimension ({arr.ndim}D) for CSV export.")
+            continue
+
+        # Save CSV with OS path length safety check
+        csv_filename = f"{default_date_and_time}_{filename}_{key}.csv"
+        full_csv_path = os.path.join(target_dir, csv_filename)
+
+        if len(full_csv_path) > max_path_length:
+            basename, ext = os.path.splitext(csv_filename)
+            allowed_len = max_path_length - len(os.path.join(target_dir, ext))
+            csv_filename = basename[:allowed_len] + ext
+            full_csv_path = os.path.join(target_dir, csv_filename)
+
+        df.to_csv(full_csv_path, index=False)
+        print(f"📄 Dataset CSV ({key}) saved to: {full_csv_path}")
 #=== FUNCTION TO SAVE SCALER OBJECTS IN SPECIFIED DIRECTORY ===#
 def save_scaler_object(scaler, dirname, filename, max_path_length=255):
     """

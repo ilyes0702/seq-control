@@ -158,8 +158,8 @@ class IndForProteinProductionPlant:
         return [
             {
                 "cols": ["x1", "x2", "x3", "x4", "x5", "x6", "x7"],
-                "labels": [r"$x_1 \; / \; \mathrm{{L}}$", r"$x_1 \; / \; \mathrm{{L}}$",r"$x_1 \; / \; \mathrm{{L}}$",r"$x_1 \; / \; \mathrm{{L}}$",r"$x_1 \; / \; \mathrm{{L}}$",r"$x_1 \; / \; \mathrm{{L}}$",r"$x_1 \; / \; \mathrm{{L}}$"],
-                "ylabel": [r"$x_1 \; / \; \mathrm{{L}}$", r"$x_1 \; / \; \mathrm{{L}}$",r"$x_1 \; / \; \mathrm{{L}}$",r"$x_1 \; / \; \mathrm{{L}}$",r"$x_1 \; / \; \mathrm{{L}}$",r"$x_1 \; / \; \mathrm{{L}}$",r"$x_1 \; / \; \mathrm{{L}}$"]
+                "labels": [r"$x_1 \; / \; \mathrm{{L}}$", r"$x_2 \; / \; \mathrm{{L}}$",r"$x_3 \; / \; \mathrm{{L}}$",r"$x_4 \; / \; \mathrm{{L}}$",r"$x_5 \; / \; \mathrm{{L}}$",r"$x_6 \; / \; \mathrm{{L}}$",r"$x_7 \; / \; \mathrm{{L}}$"],
+                "ylabel": [r"$x_1 \; / \; \mathrm{{L}}$", r"$x_2 \; / \; \mathrm{{L}}$",r"$x_3 \; / \; \mathrm{{L}}$",r"$x_4 \; / \; \mathrm{{L}}$",r"$x_5 \; / \; \mathrm{{L}}$",r"$x_6 \; / \; \mathrm{{L}}$",r"$x_7 \; / \; \mathrm{{L}}$"]
             },
             {
                 "cols": ["u1", "u2"],
@@ -175,14 +175,14 @@ class IndForProteinProductionPlant:
             {
                 "cols": ["y1", "y2", "y3"],
                 "labels": [
-                    r"$x_1 \; / \; \mathrm{{L}}$", 
-                    r"$x_2 \; / \; \mathrm{{g \cdot L^{{-1}}}}$", 
-                    r"$x_4 \; / \; \mathrm{{g \cdot L^{{-1}}}}$"
+                    r"$y_1 \; / \; \mathrm{{L}}$", 
+                    r"$y_2 \; / \; \mathrm{{g \cdot L^{{-1}}}}$", 
+                    r"$y_3 \; / \; \mathrm{{g \cdot L^{{-1}}}}$"
                 ],
                 "ylabel": [
-                    r"$x_1 \; / \; \mathrm{{L}}$", 
-                    r"$x_2 \; / \; \mathrm{{g \cdot L^{{-1}}}}$", 
-                    r"$x_4 \; / \; \mathrm{{g \cdot L^{{-1}}}}$"
+                    r"$y_1 \; / \; \mathrm{{L}}$", 
+                    r"$y_2 \; / \; \mathrm{{g \cdot L^{{-1}}}}$", 
+                    r"$y_3 \; / \; \mathrm{{g \cdot L^{{-1}}}}$"
                 ]
             }
         ]
@@ -208,8 +208,6 @@ hyperparam_config_IndForProteinProductionPlant = {
         "f_I_0": 0.0005,
         "C_n_f": 100,
         "Y": 0.51,
-
-
 
         "K_CN": 0.108,          # Nitrogen/Nutrient saturation constant [g/L]
         "k_11": 0.09,          # Deactivation rate coefficient for growth shock [1/h]
@@ -280,40 +278,56 @@ hyperparam_config_IndForProteinProductionPlant = {
         "min_correlation_threshold": -1.1,
         "n_y": 2,
         "n_u": 2,
-        "val_patience_epochs": 3,
-        "val_min_delta": 0.0001,
+        "test_min_epochs": 3,
+        "test_min_delta": 0.0001,
         "lookback_offset": 10,
     },
-    "training_data_cfg": {
+    "training_data_cfg": {        
+        "batch_size": 10000,
+        "seq_len": 1501,
+        "dt": 0.01,
+        "input_dim": 2,            
+        "output_dim": 3,
+        "min_correlation_threshold": -1.1,
+        "n_u": 2,
+        "n_y": 2,
+
         "u_1_D_center_min": 0.05,
         "u_1_D_center_max": 0.80,
+
         "u_2_D_center_min": 0.00,
         "u_2_D_center_max": 0.25,
+
         "u_1_hard_min": 0.0,
         "u_1_hard_max": 1.5,
+
         "u_2_hard_min": 0.0,
         "u_2_hard_max": 0.5,
+
         "x_1_hard_min": 0.0,
         "x_1_hard_max": None,
+
         "x_2_hard_min": 0.0,
+
         "x_3_hard_min": 0.0,
+
         "x_4_hard_min": 0.0,
-        "x_5_hard_min": 0.0,    
+
+        "x_5_hard_min": 0.0,   
+        
         "x_6_hard_min": 0.0,
         "x_6_hard_max": None,
+
         "x_7_hard_min": 0.0,
         "x_7_hard_max": None, 
 
         "u_1_lambd": 4,
-        "u_2_lambd": 4,
         "u_1_p": 0.5,
-        "u_2_p": 0.5, 
-        "input_dim": 2,            # Dim(u) = [u1, u2]
-        "output_dim": 3,           # Dim(y) = [x1, x2, x4]
-        "dt": 0.01,
-        "batch_size": 10000,
-        "seq_len": 1501,
-        "min_correlation_threshold": -1.1
+        
+        "u_2_lambd": 4,
+        "u_2_p": 0.5,
+         
+        
     },
     "mamba": {
         "d_state": 32,             # State expansion dimension space

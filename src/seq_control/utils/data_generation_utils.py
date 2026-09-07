@@ -2,18 +2,23 @@
 Data Generation Utility Functions
 =================================
 
-This module contains utilities for the in-silico generation of 
-training signals and dynamic MIMO datasets.
+This module contains utilities for the generation of training input signals and in-silico simulation data.
 """
 
 import os
 import numpy as np
 import torch
 import pandas as pd
-from seq_control.utils.saving_and_loading_utils import save_df_to_csv, save_training_dataset
-from seq_control.utils.plotting_utils import *
+
 import numpy as np
 import pandas as pd
+
+# Import utilities
+from seq_control.utils.saving_and_loading_utils import *
+from seq_control.utils.plotting_utils import *
+
+plt.style.use("src/seq_control/style.mplstyle")
+
 
 
 def generate_signal_single(training_data_cfg, channel_idx=1):
@@ -260,6 +265,45 @@ def generate_signals_mix(hyperparam_config):
 
     return u_buffer, D_center
 
+
+import torch
+
+def split_dataset_dict(dataset_dict, train_ratio=0.9, shuffle=True, seed=42):
+    X = dataset_dict["X_raw"]
+    Y = dataset_dict["Y_raw"]
+    
+    num_traces = X.shape[0]
+    
+    if seed is not None:
+        torch.manual_seed(seed)
+        
+    if shuffle:
+        indices = torch.randperm(num_traces)
+    else:
+        indices = torch.arange(num_traces)
+        
+    train_size = int(num_traces * train_ratio)
+    train_indices = indices[:train_size]
+    val_indices = indices[train_size:]
+    
+    train_dataset = {
+        "X_raw": X[train_indices],
+        "Y_raw": Y[train_indices]
+    }
+    
+    val_dataset = {
+        "X_raw": X[val_indices],
+        "Y_raw": Y[val_indices]
+    }
+    
+    print(f"✂️ Dataset Split Complete:")
+    print(f" ↳ Train: {train_dataset['X_raw'].shape[0]} traces -> {train_dataset['X_raw'].shape}")
+    print(f" ↳ Val:   {val_dataset['X_raw'].shape[0]} traces -> {val_dataset['X_raw'].shape}")
+    
+    return train_dataset, val_dataset
+
+
+
 def generate_training_batch(plant, training_data_cfg):
     """Simulates the physical system plant and generates raw, continuous time-series arrays.
 
@@ -322,14 +366,202 @@ def generate_training_batch(plant, training_data_cfg):
 
     return raw_u, raw_y, raw_states, D_center
 
+def create_sliced_window_dataset_sysid(Y_trajectories, U_trajectories, n_y, n_u, dirname):
+    """
+    Slices raw batch continuous MIMO trajectories into history-windowed features 
+    and targets for a system identifier.
+    
+    Parameters:
+        Y_trajectories: Tensor or NumPy array of shape [Num_Traces, Seq_Len, input_dim] (Plant Outputs)
+        U_trajectories: Tensor or NumPy array of shape [Num_Traces, Seq_Len, output_dim] (Control Inputs)
+        n_y: Number of past plant output lookbacks (excluding current y_k)
+        n_u: Number of past control action lookbacks
+        
+    Returns:
+        X_raw: NumPy array of shape [Num_Traces, Sliding_Seq_Len, Feature_Dim]
+        Y_raw: NumPy array of shape [Num_Traces, Sliding_Seq_Len, output_dim]
+    """
+    # Convert PyTorch tensors to NumPy arrays if necessary
+    if torch.is_tensor(Y_trajectories):
+        Y_trajectories = Y_trajectories.detach().cpu().numpy()
+    if torch.is_tensor(U_trajectories):
+        U_trajectories = U_trajectories.detach().cpu().numpy()
+        
+    # --- FIXED DIMENSION UNPACKING HERE ---
+    num_traces, total_seq_len, output_dim = Y_trajectories.shape
+    input_dim = U_trajectories.shape[-1]
+    
+    start_idx = max(n_y, n_u)
+    end_idx = total_seq_len - 1
+    sliding_seq_len = end_idx - start_idx
+    
+    # Calculate total feature dimension for verification
+    # y_{k+1} (input_dim) + y_k...y_{k-n_y} (input_dim * (n_y + 1)) + u_{k-1}...u_{k-n_u} (output_dim * n_u)
+    feature_dim = n_u * input_dim + (n_y+2) * output_dim
+    
+    print(f"📦 Slicing {num_traces} traces. Window metrics:")
+    print(f"   ↳ Clean Rollout Steps per Trace: {sliding_seq_len}")
+    print(f"   ↳ Total Feature vector size (dim_v): {feature_dim}")
 
-def generate_and_save_dataset(
+    X_list = []
+    Y_list = []
+    
+    for t_idx in range(num_traces):
+        y_trace = Y_trajectories[t_idx]  # Shape: [Total_Seq_Len, input_dim]
+        #print("y_trace.shape", y_trace.shape)
+        u_trace = U_trajectories[t_idx]  # Shape: [Total_Seq_Len, output_dim]
+        #print("u_trace.shape", u_trace.shape)
+        trace_features = []
+        trace_targets = []
+        
+        for k in range(start_idx, end_idx):
+            # 1. Future target trajectory point: y_{k+1}
+            y_next = y_trace[k + 1]
+
+            # 2. Plant output history: [y_k, y_{k-1}, ..., y_{k-n_y}]
+            y_hist = y_trace[k - n_y : k + 1].flatten()
+
+            # 3. Control input history: [u_k, u_{k-1}, ..., u_{k-n_u}]
+            u_hist = u_trace[k - n_u : k + 1].flatten()
+            
+            # Combine into a single feature row v_k
+            v_k = np.concatenate([y_hist, u_hist])
+            
+            trace_features.append(v_k)
+            trace_targets.append(y_next)  # Target is the next output y_{k+1}
+            
+        X_list.append(np.array(trace_features))  # Shape: [Sliding_Seq_Len, feature_dim]
+        Y_list.append(np.array(trace_targets))   # Shape: [Sliding_Seq_Len, output_dim]
+        
+    # Stack back to 3D arrays matching your train_controller layout expectations
+    X_raw = np.stack(X_list, axis=0)  # [Num_Traces, Sliding_Seq_Len, feature_dim]
+    Y_raw = np.stack(Y_list, axis=0)  # [Num_Traces, Sliding_Seq_Len, output_dim]
+
+    print("X_raw shape after slicing:", X_raw.shape)
+
+    dataset_dict = {
+        "X_raw": torch.from_numpy(X_raw).float(),
+        "Y_raw": torch.from_numpy(Y_raw).float()
+    }
+
+    return dataset_dict
+
+
+def create_sliced_window_dataset_ic(Y_trajectories, U_trajectories, n_y, n_u, dirname):
+    """
+    Slices raw batch continuous MIMO trajectories into history-windowed features 
+    and targets for an inverse controller.
+    
+    Parameters:
+        Y_trajectories: Tensor or NumPy array of shape [Num_Traces, Seq_Len, input_dim] (Plant Outputs)
+        U_trajectories: Tensor or NumPy array of shape [Num_Traces, Seq_Len, output_dim] (Control Inputs)
+        n_y: Number of past plant output lookbacks (excluding current y_k)
+        n_u: Number of past control action lookbacks
+        
+    Returns:
+        X_raw: NumPy array of shape [Num_Traces, Sliding_Seq_Len, Feature_Dim]
+        Y_raw: NumPy array of shape [Num_Traces, Sliding_Seq_Len, output_dim]
+    """
+    # Convert PyTorch tensors to NumPy arrays if necessary
+    if torch.is_tensor(Y_trajectories):
+        Y_trajectories = Y_trajectories.detach().cpu().numpy()
+    if torch.is_tensor(U_trajectories):
+        U_trajectories = U_trajectories.detach().cpu().numpy()
+        
+    # --- FIXED DIMENSION UNPACKING HERE ---
+    num_traces, total_seq_len, output_dim = Y_trajectories.shape
+    input_dim = U_trajectories.shape[-1]
+    
+    start_idx = max(n_y, n_u)
+    end_idx = total_seq_len - 1
+    sliding_seq_len = end_idx - start_idx
+    
+    # Calculate total feature dimension for verification
+    # y_{k+1} (input_dim) + y_k...y_{k-n_y} (input_dim * (n_y + 1)) + u_{k-1}...u_{k-n_u} (output_dim * n_u)
+    feature_dim = n_u * input_dim + (n_y+2) * output_dim
+    
+    print(f"📦 Slicing {num_traces} traces. Window metrics:")
+    print(f"   ↳ Clean Rollout Steps per Trace: {sliding_seq_len}")
+    print(f"   ↳ Total Feature vector size (dim_v): {feature_dim}")
+
+    X_list = []
+    Y_list = []
+    
+    for t_idx in range(num_traces):
+        y_trace = Y_trajectories[t_idx]  # Shape: [Total_Seq_Len, input_dim]
+        #print("y_trace.shape", y_trace.shape)
+        u_trace = U_trajectories[t_idx]  # Shape: [Total_Seq_Len, output_dim]
+        #print("u_trace.shape", u_trace.shape)
+        trace_features = []
+        trace_targets = []
+        
+        for k in range(start_idx, end_idx):
+            # 1. Future target trajectory point: y_{k+1}
+            y_next = y_trace[k + 1]
+
+            # 2. Plant output history: [y_k, y_{k-1}, ..., y_{k-n_y}]
+            y_hist = y_trace[k - n_y : k + 1].flatten()
+
+            # 3. Control input history: [u_{k-1}, u_{k-2}, ..., u_{k-n_u}]
+            u_hist = u_trace[k - n_u : k].flatten()
+            
+            # Combine into a single feature row v_k
+            v_k = np.concatenate([y_next, y_hist, u_hist])
+            
+            trace_features.append(v_k)
+            trace_targets.append(u_trace[k])  # Target is the control action u_k
+            
+        X_list.append(np.array(trace_features))  # Shape: [Sliding_Seq_Len, feature_dim]
+        Y_list.append(np.array(trace_targets))   # Shape: [Sliding_Seq_Len, output_dim]
+        
+    # Stack back to 3D arrays matching your train_controller layout expectations
+    X_raw = np.stack(X_list, axis=0)  # [Num_Traces, Sliding_Seq_Len, feature_dim]
+    Y_raw = np.stack(Y_list, axis=0)  # [Num_Traces, Sliding_Seq_Len, output_dim]
+
+    print("X_raw shape after slicing:", X_raw.shape)
+
+    dataset_dict = {
+        "X_raw": torch.from_numpy(X_raw).float(),
+        "Y_raw": torch.from_numpy(Y_raw).float()
+    }
+
+    
+    return dataset_dict
+
+import torch
+
+def split_io_data(io_data, train_ratio=0.9, shuffle=True, seed=42):
+    """
+    Splits raw trajectory I/O dictionary along trace dimension 0.
+    """
+    num_traces = io_data["u"].shape[0]
+    
+    if seed is not None:
+        torch.manual_seed(seed)
+        
+    indices = torch.randperm(num_traces) if shuffle else torch.arange(num_traces)
+    train_size = int(num_traces * train_ratio)
+    
+    train_idx = indices[:train_size]
+    val_idx = indices[train_size:]
+    
+    train_io = {k: v[train_idx] for k, v in io_data.items()}
+    val_io = {k: v[val_idx] for k, v in io_data.items()}
+    
+    print(f"✂️ Raw I/O Split Complete:")
+    print(f" ↳ Train: {train_io['u'].shape[0]} traces")
+    print(f" ↳ Val:   {val_io['u'].shape[0]} traces")
+    
+    return train_io, val_io
+
+def generate_io_dataset(
     plant,
     training_data_cfg,
     dirname,
-    show_plots=False,
-    show_overlay_plot=False,
-    save_logs=False
+    save_sample_plot=False,
+    save_all_plots=False,
+    save_overlay_plot=False,
+    save_sequence_data=False
 ):
     """
     Generates, validates, and exports a raw continuous MIMO dataset.
@@ -531,11 +763,66 @@ def generate_and_save_dataset(
         
         filename_base = f"sequence_{valid_idx_counter}.csv"
         valid_idx_counter += 1
-        
-        if save_logs:
+
+        # Save individual sequence data
+        if save_sequence_data:
             save_df_to_csv(seq_df, dirname=logs_dir, filename=filename_base)
 
-        if show_plots:
+        if save_sample_plot:
+            if s_idx==0:   
+                
+                plot_configs = plant.get_plot_config()
+                u_config = next((c for c in plot_configs if any(col.startswith("u") for col in c["cols"])), None)
+                y_config = next((c for c in plot_configs if any(col.startswith("y") for col in c["cols"])), None)
+                    
+                signals_to_plot = []
+                labels_to_plot = []
+                ylabels_to_plot = []
+    
+                for idx in range(u.shape[1]):
+                    signals_to_plot.append(u[:, idx])
+                    labels_to_plot.append([None])
+                    ylabels_to_plot.append(u_config["labels"][idx] if u_config else rf"Input $u_{{{idx+1}}}$")
+    
+                for idx in range(y_t.shape[1]):
+                    signals_to_plot.append(y_t[:, idx])
+                    labels_to_plot.append([None])
+                    ylabels_to_plot.append(y_config["labels"][idx] if y_config else rf"Output $y_{{{idx+1}}}$")
+    
+                state_config = next((c for c in plot_configs if any(col.startswith("x") for col in c["cols"])), None)
+                
+                state_signals = []
+                state_labels = []
+                state_ylabels = []
+    
+                num_states = states.shape[1]  
+                for idx in range(num_states):
+                    state_signals.append(states[:, idx])
+                    state_labels.append([None])  # Prevents redundant legend
+                    
+                    if state_config and idx < len(state_config["labels"]):
+                        state_ylabels.append(state_config["labels"][idx])
+                    else:
+                        state_ylabels.append(rf"State $x_{{{idx+1}}}$")
+
+                all_signals = signals_to_plot + state_signals
+                all_labels = labels_to_plot + state_labels
+                all_ylabels = ylabels_to_plot + state_ylabels
+                all_asp = [0.33] * len(all_signals)
+    
+                plot_stacked(
+                    t=time_axis,
+                    signals=all_signals,
+                    labels=all_labels,
+                    xlabel=rf"$t$ [$\mathrm{{h}}$]",
+                    ylabel=all_ylabels,
+                    asp=all_asp,
+                    dirname=plots_dir,
+                    filename=f"{filename_base}_all_stacked_plot.png",
+                    show=True
+                )
+        # Save plots of all individual sequences
+        if save_all_plots:
             # Reuses your plotting routine using y_t as the base trajectory
             plot_configs = plant.get_plot_config()
             u_config = next((c for c in plot_configs if any(col.startswith("u") for col in c["cols"])), None)
@@ -554,22 +841,7 @@ def generate_and_save_dataset(
                 signals_to_plot.append(y_t[:, idx])
                 labels_to_plot.append([None])
                 ylabels_to_plot.append(y_config["labels"][idx] if y_config else rf"Output $y_{{{idx+1}}}$")
-
-            dynamic_asp = [0.33] * len(signals_to_plot)
-            plot_stacked(
-                t=time_axis,
-                signals=signals_to_plot,
-                labels=labels_to_plot,
-                xlabel=rf"$t$ [$\mathrm{{h}}$]",
-                ylabel=ylabels_to_plot,
-                asp=dynamic_asp,
-                dirname=plots_dir,
-                filename=f"{filename_base}_plot.png",
-                show=True
-            )
-            # =================================================================
-            # 3. SEPARATE STACKED PLOT FOR STATE VARIABLES (No legends needed)
-            # =================================================================
+        
             state_config = next((c for c in plot_configs if any(col.startswith("x") for col in c["cols"])), None)
             
             state_signals = []
@@ -585,24 +857,7 @@ def generate_and_save_dataset(
                     state_ylabels.append(state_config["labels"][idx])
                 else:
                     state_ylabels.append(rf"State $x_{{{idx+1}}}$")
-
-            state_asp = [0.33] * len(state_signals)
             
-            plot_stacked(
-                t=time_axis,
-                signals=state_signals,
-                labels=state_labels,
-                xlabel=rf"$t$ [$\mathrm{{h}}$]",
-                ylabel=state_ylabels,
-                asp=state_asp,
-                dirname=plots_dir,
-                filename=f"{filename_base}_states_plot.png",
-                show=True
-            )
-
-            # =================================================================
-            # 3. CONSOLIDATED STACKED PLOT FOR ALL SIGNALS (u, y, and x)
-            # =================================================================
             all_signals = signals_to_plot + state_signals
             all_labels = labels_to_plot + state_labels
             all_ylabels = ylabels_to_plot + state_ylabels
@@ -643,8 +898,8 @@ def generate_and_save_dataset(
     final_y_tensor = torch.stack(valid_y_list, dim=0).to(device)
     final_state_tensor = torch.stack(valid_states_list, dim=0).to(device)
     plot_config = plant.get_plot_config()
-    # 📈 NEW: Plot all validated u trajectories in one figure
-    if show_overlay_plot and valid_sequences_count > 0:
+    # Plot all validated u trajectories in one figure
+    if save_overlay_plot and valid_sequences_count > 0:
         plot_all_signals_overlay(
             u_tensor=final_u_tensor,  # Control Inputs u (subplot 1)
             y_tensor=final_y_tensor,  # System Outputs y (subplot 2)
@@ -657,13 +912,23 @@ def generate_and_save_dataset(
     # 📊 GENERATE AND SAVE OVERALL DATASET SUMMARY STATISTICS (mean, std, min, max)
     if valid_dfs:
         all_signals_df = pd.concat(valid_dfs, ignore_index=True)
+        num_sequences = len(valid_dfs)
+        seq_lengths = [len(df) for df in valid_dfs]
         # Target u_*, y_*, and x_* signals
         target_cols = [col for col in all_signals_df.columns if col.startswith(('u_', 'y_', 'x_'))]
         
         # Calculate describe-like metrics across all valid sequence data
-        stats_df = all_signals_df[target_cols].agg(['mean', 'std', 'min', 'max']).T.reset_index()
+        stats_df = all_signals_df[target_cols].agg(['mean', 'std', 'min', 'max','count']).T.reset_index()
         stats_df.rename(columns={'index': 'signal'}, inplace=True)
-        
+        stats_df['num_sequences'] = num_sequences
+        if len(set(seq_lengths)) == 1:
+            # All sequences have the same fixed length
+            stats_df['points_per_seq'] = seq_lengths[0]
+        else:
+            # Sequences have variable lengths
+            stats_df['min_points_per_seq'] = min(seq_lengths)
+            stats_df['max_points_per_seq'] = max(seq_lengths)
+            stats_df['mean_points_per_seq'] = sum(seq_lengths) / num_sequences
         # Save dataset summary metrics CSV
         save_df_to_csv(stats_df, dirname=dirname, filename="dataset_signal_statistics")
         print(f"📁 Dataset summary statistics saved to {dirname}/reports/")    
@@ -672,15 +937,110 @@ def generate_and_save_dataset(
     if per_sequence_correlations:
         per_seq_df = pd.DataFrame(per_sequence_correlations)
         save_df_to_csv(per_seq_df, dirname=dirname, filename="mimo_per_sequence_correlations.csv")
-    
-    data_to_save = {
+
+    # 1. Save complete raw I/O data
+    dataset_io = {
         "u": final_u_tensor.cpu(),
         "y": final_y_tensor.cpu(),
         "states": final_state_tensor.cpu()
     }
-    save_training_dataset(data_to_save, dirname=dirname)
-    
-    
+    save_dataset(dataset_io, 
+                 dirname=f"{dirname}/io", 
+                 filename="io_data")
 
-    return data_to_save
+    # 2. Split raw I/O data into train and validation sets FIRST
+    train_data_io, val_data_io = split_io_data(dataset_io, 
+                                     train_ratio=0.9, 
+                                     seed=42)
+
+    save_dataset(train_data_io, 
+                 f"{dirname}/io", 
+                 filename="train_io_data")
+    save_dataset(val_data_io, 
+                 f"{dirname}/io", 
+                 filename="val_io_data")
+
+    # ==========================================
+    # 3. INVERSE CONTROLLER (IC) DATASETS
+    # ==========================================
+    ic_dir = f"{dirname}/sw_ic"
+
+    # Full IC Dataset
+    dataset_sw_ic = create_sliced_window_dataset_ic(
+        Y_trajectories=dataset_io["y"],
+        U_trajectories=dataset_io["u"],
+        n_y=training_data_cfg["n_y"],
+        n_u=training_data_cfg["n_u"],
+        dirname=ic_dir
+    )
+    save_dataset(dataset_sw_ic, 
+                 ic_dir, 
+                 filename="sw_ic_data")
+
+    # Training IC Dataset
+    train_data_sw_ic = create_sliced_window_dataset_ic(
+        Y_trajectories=train_data_io["y"],
+        U_trajectories=train_data_io["u"],
+        n_y=training_data_cfg["n_y"],
+        n_u=training_data_cfg["n_u"],
+        dirname=ic_dir
+    )
+    save_dataset(train_data_sw_ic, 
+                 ic_dir, 
+                 filename="sw_ic_training_data")
+
+    # Validation IC Dataset
+    val_data_sw_ic = create_sliced_window_dataset_ic(
+        Y_trajectories=val_data_io["y"],
+        U_trajectories=val_data_io["u"],
+        n_y=training_data_cfg["n_y"],
+        n_u=training_data_cfg["n_u"],
+        dirname=ic_dir
+    )
+    save_dataset(val_data_sw_ic, 
+                 ic_dir, 
+                 filename="sw_ic_validation_data")
+
+    # ==========================================
+    # 4. SYSTEM IDENTIFICATION (SysID) DATASETS
+    # ==========================================
+    sysid_dir = f"{dirname}/sw_sysid"
+
+    # Full SysID Dataset
+    dataset_sw_sysid = create_sliced_window_dataset_sysid(
+        Y_trajectories=dataset_io["y"],
+        U_trajectories=dataset_io["u"],
+        n_y=training_data_cfg["n_y"],
+        n_u=training_data_cfg["n_u"],
+        dirname=sysid_dir
+    )
+    save_dataset(dataset_sw_sysid, 
+                 sysid_dir, 
+                 filename="sw_sysid_data")
+
+    # Training SysID Dataset
+    train_data_sw_sysid = create_sliced_window_dataset_sysid(
+        Y_trajectories=train_data_io["y"],
+        U_trajectories=train_data_io["u"],
+        n_y=training_data_cfg["n_y"],
+        n_u=training_data_cfg["n_u"],
+        dirname=sysid_dir
+    )
+    save_dataset(train_data_sw_sysid, 
+                 sysid_dir, 
+                 filename="sw_sysid_training_data")
+
+    # Validation SysID Dataset
+    val_data_sw_sysid = create_sliced_window_dataset_sysid(
+        Y_trajectories=val_data_io["y"],
+        U_trajectories=val_data_io["u"],
+        n_y=training_data_cfg["n_y"],
+        n_u=training_data_cfg["n_u"],
+        dirname=sysid_dir
+    )
+    save_dataset(val_data_sw_sysid, 
+                 sysid_dir, 
+                 filename="sw_sysid_validation_data")
+    
+    return dataset_io
 

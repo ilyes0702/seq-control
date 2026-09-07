@@ -115,19 +115,19 @@ class ChemostatPlant:
         return [
             {
                 "cols": ["x1", "x2"],
-                "labels": [r"$X$ [$\mathrm{g}\,\mathrm{L}^{-1}$]", r"$S$ [$\mathrm{g}\,\mathrm{L}^{-1}$]"],
+                "labels": [r"$x_1$ [$\mathrm{g}\,\mathrm{L}^{-1}$]", r"$x_2$ [$\mathrm{g}\,\mathrm{L}^{-1}$]"],
                 "title": "Chemostat State Evolution",
                 "ylabel": "Concentration [g/L]"
             },
             {
                 "cols": ["y"],
-                "labels": [r"$\mu$ [$\mathrm{h}^{-1}$]"],
+                "labels": [r"$y$ [$\mathrm{h}^{-1}$]"],
                 "title": "Growth Rate Inverse Learning",
                 "ylabel": "Growth Rate [1/h]"
             },
             {
                 "cols": ["u"],
-                "labels": [r"$D$ [$\mathrm{L}\,\mathrm{h}^{-1}$]"],
+                "labels": [r"$u$ [$\mathrm{L}\,\mathrm{h}^{-1}$]"],
                 "title": "Control Input (D)",
                 "ylabel": "Dilution Rate [1/h]"
             }
@@ -204,8 +204,8 @@ hyperparam_config_ChemostatPlant = {
         "loss_function": "MSELoss", 
         "lr_decay_rate":1,
         
-        "val_patience_epochs": 3,
-        "val_min_delta": 0.0005,
+        "test_min_epochs": 3,
+        "test_min_delta": 0.0005,
 
         "n_u": 2,
         "n_y": 2,
@@ -214,11 +214,14 @@ hyperparam_config_ChemostatPlant = {
         
     },
     "training_data_cfg" : {
-        "batch_size": 10,
+        "batch_size": 100,
         "seq_len": 501,
         "dt": 0.1,
+        "input_dim": 1,   # number of plant outputs
+        "output_dim": 1,   # number of plant control inputs,
         "min_correlation_threshold": -10, #0.7,
-        "delay_steps": 1,
+        "n_u": 2,
+        "n_y": 2,
 
         "u_1_D_center_min": 0.15,
         "u_1_D_center_max": 0.2,
@@ -235,8 +238,6 @@ hyperparam_config_ChemostatPlant = {
         "y_1_hard_min": 0,
         "y_1_hard_max": 0.5,
 
-        "input_dim": 1,   # number of plant outputs
-        "output_dim": 1,   # number of plant control inputs,
         "u_1_lambd": 20,
         "u_1_p": 0.05,
 

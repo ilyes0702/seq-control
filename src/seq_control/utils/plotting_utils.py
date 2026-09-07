@@ -177,7 +177,8 @@ def plot_signals(
     show=False,
     filename=None,
     dirname=None,
-    asp=1.0
+    asp=1.0,
+    
 ):
     """
     Generic plotting function for time-series or x-y signals.
@@ -224,8 +225,8 @@ def plot_signals(
     :return: A high-resolution raster image object version of the finalized signal canvas.
     :rtype: PIL.Image.Image
     """
-
-    fig, ax = plt.subplots(layout="constrained")
+    base_width = 7
+    fig, ax = plt.subplots(figsize=(base_width, base_width * asp),layout="constrained")
 
     # Iterate and render each signal track onto the common subplot grid
     for i, sig in enumerate(signals):
@@ -240,6 +241,7 @@ def plot_signals(
     y_range = np.diff(ax.get_ylim())[0]
     range_ratio = x_range / y_range
     ax.set_aspect(asp * range_ratio)
+    #ax.set_box_aspect(asp)
 
     # Apply axis descriptors and grid annotations
     ax.set_xlabel(xlabel)
@@ -253,7 +255,10 @@ def plot_signals(
 
     # Handle standard initial vector export if path properties are configured
     if save_path:
-        fig.savefig(save_path, dpi=300, bbox_inches="tight", pad_inches=0.01)
+        fig.savefig(save_path, 
+                    dpi=300, 
+                    bbox_inches="tight", 
+                    pad_inches=0.0)
 
     if show:
         plt.show()

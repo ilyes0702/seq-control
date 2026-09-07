@@ -15,6 +15,285 @@ from seq_control.utils.plotting_utils import plot_stacked
 from seq_control.utils.saving_and_loading_utils import *
 from seq_control.utils.general_utils import *
 
+import os
+import numpy as np
+import pandas as pd
+import torch
+
+def plot_closed_loop_trajectories(
+    t,
+    u_ref,
+    u_applied,
+    y_ref,
+    y_achieved,
+    states_achieved,
+    states_ref=None,
+    dirname="./plots",
+    show=False
+):
+    """
+    Renders a single stacked trajectory comparison plot combining Inputs (u), 
+    Outputs (y), and States (x) for ALL sequences in the dataset using `plot_stacked`.
+    """
+    num_sequences = u_ref.shape[0]
+    control_dim = u_ref.shape[-1]
+    output_dim = y_ref.shape[-1]
+    state_dim = states_achieved.shape[-1]
+
+    for trace_idx in range(num_sequences):
+        trace_tag = f"trace_{trace_idx + 1}"
+
+        signals = []
+        labels = []
+        ylabels = []
+
+        # ----------------------------------------------------
+        # 1. CONTROL INPUTS (u)
+        # ----------------------------------------------------
+        for ch in range(control_dim):
+            signals.append([u_ref[trace_idx, :, ch], u_applied[trace_idx, :, ch]])
+            labels.append(["$u_{ref}$", "$u_{applied}$"])
+            ylabels.append(f"$u_{{{ch+1}}}$")
+
+        # ----------------------------------------------------
+        # 2. PLANT OUTPUTS (y)
+        # ----------------------------------------------------
+        for ch in range(output_dim):
+            signals.append([y_ref[trace_idx, :, ch], y_achieved[trace_idx, :, ch]])
+            labels.append(["$y_{ref}$", "$y_{achieved}$"])
+            ylabels.append(f"$y_{{{ch+1}}}$")
+
+        # ----------------------------------------------------
+        # 3. SYSTEM STATES (x)
+        # ----------------------------------------------------
+        for ch in range(state_dim):
+            if states_ref is not None:
+                signals.append([states_ref[trace_idx, :, ch], states_achieved[trace_idx, :, ch]])
+                labels.append(["$x_{ref}$", "$x_{achieved}$"])
+            else:
+                signals.append([states_achieved[trace_idx, :, ch]])
+                labels.append(["$x_{achieved}$"])
+            
+            ylabels.append(f"$x_{{{ch+1}}}$")
+
+        # ----------------------------------------------------
+        # RENDER COMBINED STACKED PLOT
+        # ----------------------------------------------------
+        plot_stacked(
+            t=t,
+            signals=signals,
+            labels=labels,
+            ylabel=ylabels,
+            title=f"Closed-Loop System Trajectories - {trace_tag}",
+            xlabel="Time [s]",
+            filename=f"closed_loop_trajectories_{trace_tag}.png",
+            dirname=dirname,
+            show=show
+        )
+
+import os
+import numpy as np
+import torch
+import pandas as pd
+
+import os
+import numpy as np
+import torch
+import pandas as pd
+
+def validate_controller(
+    model,
+    plant,
+    dataset_io,
+    scaler_x,
+    scaler_y,
+    hyperparam_config,
+    dirname,
+    start_idx,
+    mode="closed_loop",  # Options: "closed_loop" or "open_loop"
+    show_plots=False
+):
+    """
+    Validation routine supporting both closed-loop and open-loop modes.
+    
+    Parameters:
+    -----------
+    mode : str
+        - "closed_loop": Feature history for model predictions comes from real-time 
+                        plant outputs (y_achieved) and applied inputs (u_applied).
+        - "open_loop"  : Feature history comes strictly from reference target 
+                        trajectories (y_ref) and reference inputs (u_ref).
+    """
+    if mode not in ["closed_loop", "open_loop"]:
+        raise ValueError("`mode` must be either 'closed_loop' or 'open_loop'.")
+
+    os.makedirs(dirname, exist_ok=True)
+    mode_tag = mode.upper().replace("_", "-")
+    
+    # --- 1. CONFIGURATION & HYPERPARAMETERS ---
+    device = hyperparam_config["train"]["device"]
+    dt = hyperparam_config["training_data_cfg"]["dt"]
+    n_y = hyperparam_config["training_data_cfg"]["n_y"]
+    n_u = hyperparam_config["training_data_cfg"]["n_u"]
+    
+    plant_cfg = hyperparam_config.get("plant", {})
+    u_min = plant_cfg.get("u_1_hard_min", None)
+    u_max = plant_cfg.get("u_1_hard_max", None)
+
+    # Load trajectory dataset
+    u_ref_raw = dataset_io["u"].to(dtype=torch.float32)       # [N, total_seq_len, control_dim]
+    y_ref_raw = dataset_io["y"].to(dtype=torch.float32)       # [N, total_seq_len, output_dim]
+    states_raw = dataset_io["states"].to(dtype=torch.float32) # [N, total_seq_len, state_dim] OR [N, state_dim]
+
+    N, total_seq_len, output_dim = y_ref_raw.shape
+    control_dim = u_ref_raw.shape[-1]
+    end_idx = total_seq_len - 1
+
+    y_ref_np = y_ref_raw.numpy()
+    u_ref_np = u_ref_raw.numpy()
+    
+    has_state_ref = (states_raw.ndim == 3)
+    states_ref_np = states_raw.numpy() if has_state_ref else None
+
+    # --- 2. INITIALIZATION & STORAGE ARRAYS ---
+    y_achieved = np.zeros((N, total_seq_len, output_dim), dtype=np.float32)
+    u_applied = np.zeros((N, total_seq_len, control_dim), dtype=np.float32)
+    
+    # Extract true initial state at k = 0
+    initial_state = states_raw[:, 0, :] if has_state_ref else states_raw.clone()
+    current_state = initial_state.to(device)
+    state_dim = current_state.shape[-1]
+    
+    states_achieved = np.zeros((N, total_seq_len, state_dim), dtype=np.float32)
+
+    # Log initial state x_0 and initial plant output y_0
+    states_achieved[:, 0, :] = current_state.cpu().numpy()
+    y_0 = plant.get_y(current_state, 0.0)
+    if y_0.ndim == 1:
+        y_0 = y_0.unsqueeze(-1)
+    y_achieved[:, 0, :] = y_0.cpu().numpy()
+
+    # --- 3. PHASE 1: OPEN-LOOP WARM-UP (k = 0 to start_idx - 1) ---
+    print(f"🔄 [{mode_tag}] Executing warm-up (k=0 to {start_idx - 1}) using reference inputs...")
+    
+    for k in range(0, start_idx):
+        t_current = k * dt
+        
+        # Apply ground-truth reference control input
+        u_k_np = u_ref_np[:, k, :]
+        u_applied[:, k, :] = u_k_np
+        u_k_tensor = torch.tensor(u_k_np, dtype=torch.float32, device=device)
+
+        # Step plant dynamics
+        next_state, _ = plant.step(current_state, u_k_tensor, t=t_current, dt=dt)
+        current_state = next_state
+
+        # Record resulting state and plant output at k + 1
+        states_achieved[:, k + 1, :] = current_state.cpu().numpy()
+        y_next = plant.get_y(current_state, (k + 1) * dt)
+        if y_next.ndim == 1:
+            y_next = y_next.unsqueeze(-1)
+        y_achieved[:, k + 1, :] = y_next.cpu().numpy()
+
+    # --- 4. PHASE 2: MODEL CONTROL ROLLOUT (k = start_idx to end_idx - 1) ---
+    model.eval()
+    model.to(device)
+
+    print(f"🚀 [{mode_tag}] Starting model execution (k={start_idx} to {end_idx - 1})...")
+
+    for k in range(start_idx, end_idx):
+        t_current = k * dt
+
+        # Select history sources depending on mode
+        if mode == "open_loop":
+            # Open-Loop: Assemble features strictly from reference target signals
+            y_next_ref = y_ref_np[:, k + 1, :]
+            y_hist_flat = y_ref_np[:, k - n_y : k + 1, :][:, ::-1, :].reshape(N, -1)
+            u_hist_flat = u_ref_np[:, k - n_u : k, :][:, ::-1, :].reshape(N, -1)
+        else:
+            # Closed-Loop: Assemble features from actual plant measurements & applied inputs
+            y_next_ref = y_ref_np[:, k + 1, :]
+            y_hist_flat = y_achieved[:, k - n_y : k + 1, :][:, ::-1, :].reshape(N, -1)
+            u_hist_flat = u_applied[:, k - n_u : k, :][:, ::-1, :].reshape(N, -1)
+
+        v_k = np.concatenate([y_next_ref, y_hist_flat, u_hist_flat], axis=1)
+
+        # Scaler transformation and model prediction
+        v_k_scaled = scaler_x.transform(v_k)
+        v_k_tensor = torch.tensor(v_k_scaled, dtype=torch.float32, device=device).unsqueeze(1)
+
+        with torch.no_grad():
+            u_pred_scaled = model(v_k_tensor).squeeze(1)
+
+        # Inverse transformation and saturation clipping
+        u_k_np = scaler_y.inverse_transform(u_pred_scaled.cpu().numpy())
+        if u_min is not None or u_max is not None:
+            u_k_np = np.clip(u_k_np, a_min=u_min, a_max=u_max)
+
+        u_applied[:, k, :] = u_k_np
+        u_k_tensor = torch.tensor(u_k_np, dtype=torch.float32, device=device)
+
+        # Step plant dynamics with predicted control input
+        next_state, _ = plant.step(current_state, u_k_tensor, t=t_current, dt=dt)
+        current_state = next_state
+
+        # Log state and output at k + 1
+        states_achieved[:, k + 1, :] = current_state.cpu().numpy()
+        y_next_achieved = plant.get_y(current_state, (k + 1) * dt)
+        if y_next_achieved.ndim == 1:
+            y_next_achieved = y_next_achieved.unsqueeze(-1)
+        y_achieved[:, k + 1, :] = y_next_achieved.cpu().numpy()
+
+    # --- 5. METRICS COMPUTATION (Evaluated on Model Phase) ---
+    y_ref_eval = y_ref_np[:, start_idx:end_idx, :]
+    y_achieved_eval = y_achieved[:, start_idx:end_idx, :]
+    u_ref_eval = u_ref_np[:, start_idx:end_idx, :]
+    u_applied_eval = u_applied[:, start_idx:end_idx, :]
+    states_achieved_eval = states_achieved[:, start_idx:end_idx, :]
+    states_ref_eval = states_ref_np[:, start_idx:end_idx, :] if has_state_ref else None
+
+    total_mse = float(np.mean((y_ref_eval - y_achieved_eval) ** 2))
+    total_rmse = float(np.sqrt(total_mse))
+    control_mse = float(np.mean((u_ref_eval - u_applied_eval) ** 2))
+
+    summary_df = pd.DataFrame({
+        "Metric": ["Tracking MSE", "Tracking RMSE", "Control MSE"],
+        "Value": [total_mse, total_rmse, control_mse]
+    })
+
+    print(f"\n==========================================")
+    print(f"🔁 {mode_tag} VALIDATION SUMMARY")
+    print(f"==========================================")
+    print(summary_df.to_string(index=False))
+    print(f"==========================================\n")
+
+    # --- 6. PLOTTING ---
+    t_full = np.arange(0, end_idx) * dt
+
+    plot_closed_loop_trajectories(
+        t=t_full,
+        u_ref=u_ref_np[:, :end_idx, :],
+        u_applied=u_applied[:, :end_idx, :],
+        y_ref=y_ref_np[:, :end_idx, :],
+        y_achieved=y_achieved[:, :end_idx, :],
+        states_ref=states_ref_np[:, :end_idx, :] if has_state_ref else None,
+        states_achieved=states_achieved[:, :end_idx, :],
+        dirname=os.path.join(dirname, mode),
+        show=show_plots
+    )
+
+    return {
+        "summary_df": summary_df,
+        "metrics": {"tracking_mse": total_mse, "tracking_rmse": total_rmse, "control_mse": control_mse},
+        "simulated_trajectories": {
+            "y_ref": y_ref_np,
+            "y_achieved": y_achieved,
+            "u_ref": u_ref_np,
+            "u_applied": u_applied,
+            "states_ref": states_ref_np,
+            "states_achieved": states_achieved
+        }
+    }
 
 def simulate_tracking_stateful(
     model,

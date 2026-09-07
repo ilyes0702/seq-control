@@ -9,7 +9,8 @@ tz = pytz.timezone('Europe/Berlin')
 date = datetime.now(tz).strftime("%Y-%m-%d")
 date_and_time = datetime.now(tz).strftime("%Y-%m-%d_%H-%M-%S")
 
-
+import matplotlib.pyplot as plt
+plt.style.use("src/seq_control/style.mplstyle")
 
 path_name = "logs/" + date + "/"
 

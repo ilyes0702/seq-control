@@ -143,38 +143,38 @@ class IdiophasePlant:
             {
                 "cols": ["x1", "x2", "x3", "x4"],
                 "labels": [
-                    r"$X$ [$\mathrm{mg}$]", 
-                    r"$S$ [$\mathrm{g}$]", 
-                    r"$M_{\mathrm{pre}}$ [$\mathrm{g}$]", 
-                    r"$M_{\mathrm{pen}}$ [$\mathrm{g}$]"
+                    r"$x_1$ [$\mathrm{mg}$]", 
+                    r"$x_2$ [$\mathrm{g}$]", 
+                    r"$x_3$ [$\mathrm{g}$]", 
+                    r"$x_4$ [$\mathrm{g}$]"
                 ],
                 "ylabel": [
-                    r"$X$ [$\mathrm{mg}$]", 
-                    r"$S$ [$\mathrm{g}$]", 
-                    r"$M_{\mathrm{pre}}$ [$\mathrm{g}$]", 
-                    r"$M_{\mathrm{pen}}$ [$\mathrm{g}$]"
+                    r"$x_1$ [$\mathrm{mg}$]", 
+                    r"$x_2$ [$\mathrm{g}$]", 
+                    r"$x_3$ [$\mathrm{g}$]", 
+                    r"$x_4$ [$\mathrm{g}$]"
                 ]
             },
             {
                 "cols": ["y1", "y2"],
                 "labels": [
-                    r"$\mu$ [$\mathrm{h}^{-1}$]", 
-                    r"$c_{\mathrm{pre}}$ [$\mathrm{g}\,\mathrm{L}^{-1}$]"
+                    r"$y_1$ [$\mathrm{h}^{-1}$]", 
+                    r"$y_2$ [$\mathrm{g}\,\mathrm{L}^{-1}$]"
                 ],
                 "ylabel": [
-                    r"$\mu$ [$\mathrm{h}^{-1}$]", 
-                    r"$c_{\mathrm{pre}}$ [$\mathrm{g}\,\mathrm{L}^{-1}$]"
+                    r"$y_1$ [$\mathrm{h}^{-1}$]", 
+                    r"$y_2$ [$\mathrm{g}\,\mathrm{L}^{-1}$]"
                 ]
             },
             {
                 "cols": ["u1", "u2"],
                 "labels": [
-                    r"$F_{\mathrm{glu}}$ [$\mathrm{L}\,\mathrm{h}^{-1}$]", 
-                    r"$F_{\mathrm{pre}}$ [$\mathrm{L}\,\mathrm{h}^{-1}$]"
+                    r"$u_1$ [$\mathrm{L}\,\mathrm{h}^{-1}$]", 
+                    r"$u_2$ [$\mathrm{L}\,\mathrm{h}^{-1}$]"
                 ],
                 "ylabel": [
-                    r"$F_{\mathrm{glu}}$ [$\mathrm{L}\,\mathrm{h}^{-1}$]", 
-                    r"$F_{\mathrm{pre}}$ [$\mathrm{L}\,\mathrm{h}^{-1}$]"
+                    r"$u_1$ [$\mathrm{L}\,\mathrm{h}^{-1}$]", 
+                    r"$u_2$ [$\mathrm{L}\,\mathrm{h}^{-1}$]"
                 ]
             }
         ]
@@ -216,8 +216,8 @@ hyperparam_config_IdiophasePlant = {
             "n_y": 4,
             "n_u": 2,
             "lookback_offset": 100,
-            "val_patience_epochs": 3,
-            "val_min_delta": 0.00001
+            "test_min_epochs": 3,
+            "test_min_delta": 0.00001
         },
         "plant": {
             "mu_max": 0.12,
@@ -272,26 +272,18 @@ hyperparam_config_IdiophasePlant = {
             "output_dim": 2  # u1, u2
         },
         "training_data_generation_config": {
+            "batch_size": 2000,
+            "seq_len":    2001,
+            "dt" : 0.01,
+            "input_dim": 2,  # y
+            "output_dim": 2,  # u
+            "min_correlation_threshold": -1.1,
+
             "u_1_D_center_min": 0.6,
             "u_1_D_center_max": 0.9,
 
             "u_1_hard_min": 0.0,
             "u_1_hard_max": 1,
-
-            "x_1_hard_min": 0,
-            "x_1_hard_max": None,
-
-            "y_1_hard_min": 0,
-            "y_1_hard_max": 0.12,
-
-            "input_dim": 2,  # y
-            "output_dim": 2,  # u
-
-            "u_1_p" : 0.5,
-            "u_1_lambd" : 4,
-
-            "u_2_p" : 0.5,
-            "u_2_lambd" : 4,
 
             "u_2_D_center_min": 0.0,
             "u_2_D_center_max": 0.5,
@@ -299,12 +291,17 @@ hyperparam_config_IdiophasePlant = {
             "u_2_hard_min": 0.0,
             "u_2_hard_max": 1,
 
-            "dt" : 0.01,
+            "x_1_hard_min": 0,
+            "x_1_hard_max": None,
 
-            "batch_size": 2000,
-            "seq_len":    2001,
+            "y_1_hard_min": 0,
+            "y_1_hard_max": 0.12,
 
-            "min_correlation_threshold": -1.1
+            "u_1_p" : 0.5,
+            "u_1_lambd" : 4,
+
+            "u_2_p" : 0.5,
+            "u_2_lambd" : 4,            
         },
         "training_data_cfg" : {
             "batch_size": 2000,
@@ -312,6 +309,8 @@ hyperparam_config_IdiophasePlant = {
             "dt": 0.01,
             "min_correlation_threshold": -1.1,
             "delay_steps": 1,
+            "n_u": 2,
+            "n_y": 2,
 
             "u_1_D_center_min": 0.6,
             "u_1_D_center_max": 0.9,

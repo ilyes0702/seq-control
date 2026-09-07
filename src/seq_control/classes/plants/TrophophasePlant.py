@@ -202,9 +202,9 @@ class TrophophasePlant:
     def get_plot_config(self):
         return [
             {
-                            "cols": ["t"],
-                            "labels": [r"$t$ [$\mathrm{h}$]"],
-                            "xlabel": [r"$t$ [$\mathrm{h}$]"]
+                "cols": ["t"],
+                "labels": [r"$t$ [$\mathrm{h}$]"],
+                "xlabel": [r"$t$ [$\mathrm{h}$]"]
                         },
             {
                 "cols": ["x_1", "x_2"],
@@ -213,13 +213,13 @@ class TrophophasePlant:
             },
             {
                 "cols": ["y"],
-                "labels": [r"$y_1$ [$\mathrm{h}^{-1}$]"],
-                "ylabel": r"$y_1$ [$\mathrm{h}^{-1}$]"
+                "labels": [r"$y$ [$\mathrm{h}^{-1}$]"],
+                "ylabel": r"$y$ [$\mathrm{h}^{-1}$]"
             },
             {
                 "cols": ["u"],
-                "labels": [r"$u_1$ [$\mathrm{h}^{-1}$]"],
-                "ylabel": r"$u_1$ [$\mathrm{h}^{-1}$]"
+                "labels": [r"$u$ [$\mathrm{h}^{-1}$]"],
+                "ylabel": r"$u$ [$\mathrm{h}^{-1}$]"
             }
         ]
 
@@ -282,6 +282,15 @@ hyperparam_config_TrophophasePlant = {
         
     },
     "training_data_cfg" : {
+        "batch_size": 100,
+        "seq_len":    2001,
+        "input_dim": 1,  # y
+        "output_dim": 1,  # u
+        "dt" : 0.01,
+        "min_correlation_threshold": -1.1,
+        "n_u": 2,
+        "n_y": 2,
+
         "u_1_D_center_min": 0.6,
         "u_1_D_center_max": 0.9,
 
@@ -294,19 +303,8 @@ hyperparam_config_TrophophasePlant = {
         "y_1_hard_min": 0,
         "y_1_hard_max": 0.12,
 
-        "input_dim": 1,  # y
-        "output_dim": 1,  # u
-
         "u_1_p" : 0.5,
-        "u_1_lambd" : 4,
-
-        "dt" : 0.01,
-
-        "batch_size": 100,
-        "seq_len":    2001,
-
-        "min_correlation_threshold": -1.1
-
+        "u_1_lambd" : 4
     },
 
     "train": {
@@ -326,8 +324,9 @@ hyperparam_config_TrophophasePlant = {
         "constant_signal_probability": 0.0,
         "n_u": 2,
         "n_y": 2,
-        "val_patience_epochs": 3,
-        "val_min_delta": 0.0001,
+        
+        "test_patience_epochs": 3,
+        "test_min_delta": 0.0001,
         "lookback_offset": 20
     },
 
