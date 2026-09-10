@@ -1,13 +1,13 @@
 import matplotlib.pyplot as plt
 from src.seq_control.classes.plants.ChemostatPlant import *
-from src.seq_control.classes.controllers.MPCController import *
+from src.seq_control.classes.sequence_models.MPCController import *
 
 # ==========================================
 # 3. CLOSED-LOOP EXPERIMENT SIMULATION
 # =======================================
 # 1. Instantiate concrete plant and wrap it
 chemostat = ChemostatPlant(hyperparam_config_ChemostatPlant)
-plant_adapter = ChemostatWrapper(chemostat)
+#plant_adapter = ChemostatWrapper(chemostat)
 
 # 2. Instantiate MPC controller
 mpc = MPCController(

@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from mamba_ssm import Mamba
 from mamba_ssm.utils.generation import InferenceParams
-from src.seq_control.classes.controllers.MPCController import *
+from src.seq_control.classes.sequence_models.MPCController import *
 
 import torch
 import torch.nn as nn

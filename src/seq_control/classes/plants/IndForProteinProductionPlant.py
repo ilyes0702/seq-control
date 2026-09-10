@@ -1,13 +1,29 @@
 import torch
 
+
 class IndForProteinProductionPlant:
+    """Inducible recombinant protein production bioprocess plant simulation model.
+
+    Models a 7-state fed-batch fermentation process for recombinant protein 
+    production upon chemical induction, integrated via a batch-parallel vectorized 
+    adaptive-step Dormand-Prince (RK45) integration scheme.
+
+    :param hyperparam_config: Configuration dictionary containing device ('train'),
+        time step ('signal'), and kinetic/bioprocess parameters ('plant').
+    :type hyperparam_config: dict
+    """
+
     def __init__(self, hyperparam_config):
+        """Initialize plant constants, kinetic parameters, and device placement.
+
+        :param hyperparam_config: Nested configuration dictionary.
+        :type hyperparam_config: dict
+        """
         self.hyperparam_config = hyperparam_config
         self.device = hyperparam_config["train"]["device"]
         self.dt = hyperparam_config["signal"]["dt"]
 
-        # Constants and parameters from image description
-        # (Ensure these keys are updated in your hyperparam dict as needed)
+        # Constants and parameters from plant model definition
         self.mu_max = torch.tensor(hyperparam_config["plant"]["mu_max"], device=self.device)
         self.K_CI = torch.tensor(hyperparam_config["plant"]["K_CI"], device=self.device)
         self.k_22 = torch.tensor(hyperparam_config["plant"]["k_22"], device=self.device)
@@ -23,15 +39,18 @@ class IndForProteinProductionPlant:
         
         self.K_I = torch.tensor(hyperparam_config["plant"]["K_I"], device=self.device)
         self.C_i_f = torch.tensor(hyperparam_config["plant"]["C_i_f"], device=self.device)
-        
 
     def get_initial_state(self, batch_size):
+        """Construct initial state tensor across a batch of simulation trajectories.
+
+        State components vector layout:
+        ``[x1 (Volume), x2 (Biomass), x3 (Glucose), x4 (Protein), x5 (Inducer), x6 (Shock), x7 (Recovery)]``
+
+        :param batch_size: Number of parallel simulation trajectories in batch.
+        :type batch_size: int
+        :returns: Initial state tensor of shape ``(batch_size, 7)``.
+        :rtype: torch.Tensor
         """
-        Returns [batch_size, 7] tensor corresponding to the 7 system states:
-        [x1 (Vol), x2 (X), x3 (N), x4 (P), x5 (Ind), x6 (Shock), x7 (Recovery)]
-        """
-        # Distribute state values randomly within realistic boundaries around nominal points
-        
         x1_init = self.hyperparam_config["plant"]["x10"] * torch.ones((batch_size, 1), device=self.device)
         x2_init = self.hyperparam_config["plant"]["x20"] * torch.ones((batch_size, 1), device=self.device)
         x3_init = self.hyperparam_config["plant"]["x30"] * torch.ones((batch_size, 1), device=self.device)
@@ -43,9 +62,16 @@ class IndForProteinProductionPlant:
         return torch.cat([x1_init, x2_init, x3_init, x4_init, x5_init, x6_init, x7_init], dim=1)
 
     def get_y(self, state, t=None):
-        """
-        Calculates and returns the 3 specified desired (controlled) output variables:
-        y = [x1 (Volume), x2 (Cell Density), x4 (Protein Concentration)]
+        """Extract monitored 3-dimensional controlled output vector y = [x1, x2, x4].
+
+        Outputs correspond to reactor volume (x1), cell density/biomass (x2), and protein concentration (x4).
+
+        :param state: Current state tensor of shape ``(batch_size, 7)``.
+        :type state: torch.Tensor
+        :param t: Current simulation time, defaults to ``None``.
+        :type t: float or torch.Tensor, optional
+        :returns: Monitored tracking vector tensor of shape ``(batch_size, 3)``.
+        :rtype: torch.Tensor
         """
         x1 = state[:, 0:1]
         x2 = state[:, 1:2]
@@ -53,22 +79,40 @@ class IndForProteinProductionPlant:
         return torch.cat([x1, x2, x4], dim=1)
 
     def dynamics(self, x1, x2, x3, x4, x5, x6, x7, u, t=None):
-        """
-        Calculates differential equations derived from Equation (1)-(4) in the plant document.
-        u is a 2D tensor where:
-          u[:, 0:1] = u1 (Glucose feed rate)
-          u[:, 1:2] = u2 (Inducer feed rate)
+        """Compute state derivative vector dx/dt for the protein production plant model.
+
+        :param x1: Reactor volume tensor of shape ``(batch_size, 1)``.
+        :type x1: torch.Tensor
+        :param x2: Biomass cell density tensor of shape ``(batch_size, 1)``.
+        :type x2: torch.Tensor
+        :param x3: Glucose substrate concentration tensor of shape ``(batch_size, 1)``.
+        :type x3: torch.Tensor
+        :param x4: Recombinant protein concentration tensor of shape ``(batch_size, 1)``.
+        :type x4: torch.Tensor
+        :param x5: Inducer concentration tensor of shape ``(batch_size, 1)``.
+        :type x5: torch.Tensor
+        :param x6: Physiological shock factor tensor of shape ``(batch_size, 1)``.
+        :type x6: torch.Tensor
+        :param x7: Physiological recovery factor tensor of shape ``(batch_size, 1)``.
+        :type x7: torch.Tensor
+        :param u: Applied control feed inputs tensor [u1 (glucose), u2 (inducer)] of shape ``(batch_size, 2)``.
+        :type u: torch.Tensor
+        :param t: Current simulation time, defaults to ``None``.
+        :type t: float or torch.Tensor, optional
+        :returns: Tuple (dx1dt, dx2dt, dx3dt, dx4dt, dx5dt, dx6dt, dx7dt) containing continuous derivatives.
+        :rtype: tuple[torch.Tensor, ...]
         """
         u1 = u[:, 0:1]
         u2 = u[:, 1:2]
         
-        R_R = self.K_CI/(self.K_CI+x5)
+        R_R = self.K_CI / (self.K_CI + x5)
+        
         # Intermediate kinetics (Eq 2, 3, 4)
         mu = (self.mu_max * x3 / (self.K_CN + x3 * (1.0 + x3 / self.K_s))) * \
              (x6 + x7 * R_R)
              
         R_f_p = (self.f_max * x3 / (self.K_CN + x3 * (1.0 + x3 / self.K_s))) * \
-            ((self.f_I_0 + x5) / (self.K_I + x5))
+                ((self.f_I_0 + x5) / (self.K_I + x5))
             
         k_1 = self.k_11 * x5 / (self.K_IX + x5)
         k_2 = self.k_22 * x5 / (self.K_IX + x5)
@@ -85,8 +129,22 @@ class IndForProteinProductionPlant:
         return dx1dt, dx2dt, dx3dt, dx4dt, dx5dt, dx6dt, dx7dt
 
     def step(self, state, u, t, dt):
-        """
-        Vectorized adaptive-step Dormand-Prince (RK45) parallel tracking engine.
+        """Advance simulation state across time horizon ``dt`` via vectorized adaptive RK45 integration.
+
+        Integrates the 7-state continuous dynamic system over ``[t, t + dt]`` using a batch-parallel 
+        adaptive step size Dormand-Prince method with local error estimation and adaptive step scaling.
+
+        :param state: Current state tensor of shape ``(batch_size, 7)``.
+        :type state: torch.Tensor
+        :param u: Applied control feed inputs tensor [u1, u2] of shape ``(batch_size, 2)``.
+        :type u: torch.Tensor
+        :param t: Current simulation start time.
+        :type t: float or torch.Tensor
+        :param dt: Time integration horizon step size.
+        :type dt: float or torch.Tensor
+        :returns: Tuple ``(state_next, y_next)`` containing updated state tensor of shape 
+            ``(batch_size, 7)`` and monitored output tensor of shape ``(batch_size, 3)``.
+        :rtype: tuple[torch.Tensor, torch.Tensor]
         """
         batch_size = state.shape[0]
         device = state.device
@@ -151,53 +209,60 @@ class IndForProteinProductionPlant:
         return y, self.get_y(y, t_end)
 
     def get_plot_config(self):
-        """
-        Dynamically configures labels following publication constraints.
-        Using math-mode strings with double braces inside raw f-strings.
+        """Configure matplotlib visualization metadata and LaTeX labels for simulation plots.
+
+        :returns: List of plotting configuration dictionaries specifying columns, titles, and unit labels.
+        :rtype: list[dict]
         """
         return [
             {
                 "cols": ["x1", "x2", "x3", "x4", "x5", "x6", "x7"],
-                "labels": [r"$x_1 \; / \; \mathrm{{L}}$", r"$x_2 \; / \; \mathrm{{L}}$",r"$x_3 \; / \; \mathrm{{L}}$",r"$x_4 \; / \; \mathrm{{L}}$",r"$x_5 \; / \; \mathrm{{L}}$",r"$x_6 \; / \; \mathrm{{L}}$",r"$x_7 \; / \; \mathrm{{L}}$"],
-                "ylabel": [r"$x_1 \; / \; \mathrm{{L}}$", r"$x_2 \; / \; \mathrm{{L}}$",r"$x_3 \; / \; \mathrm{{L}}$",r"$x_4 \; / \; \mathrm{{L}}$",r"$x_5 \; / \; \mathrm{{L}}$",r"$x_6 \; / \; \mathrm{{L}}$",r"$x_7 \; / \; \mathrm{{L}}$"]
+                "labels": [
+                    r"$x_1 \; / \; \mathrm{L}$", 
+                    r"$x_2 \; / \; \mathrm{g \cdot L^{-1}}$",
+                    r"$x_3 \; / \; \mathrm{g \cdot L^{-1}}$",
+                    r"$x_4 \; / \; \mathrm{g \cdot L^{-1}}$",
+                    r"$x_5 \; / \; \mathrm{g \cdot L^{-1}}$",
+                    r"$x_6 \; / \; \mathrm{dimensionless}$",
+                    r"$x_7 \; / \; \mathrm{dimensionless}$"
+                ],
+                "ylabel": [
+                    r"$x_1 \; / \; \mathrm{L}$", 
+                    r"$x_2 \; / \; \mathrm{g \cdot L^{-1}}$",
+                    r"$x_3 \; / \; \mathrm{g \cdot L^{-1}}$",
+                    r"$x_4 \; / \; \mathrm{g \cdot L^{-1}}$",
+                    r"$x_5 \; / \; \mathrm{g \cdot L^{-1}}$",
+                    r"$x_6 \; / \; \mathrm{dimensionless}$",
+                    r"$x_7 \; / \; \mathrm{dimensionless}$"
+                ]
             },
             {
                 "cols": ["u1", "u2"],
                 "labels": [
-                    r"$u_1 \; / \; \mathrm{{L \cdot h^{{-1}}}}$", 
-                    r"$u_2 \; / \; \mathrm{{L \cdot h^{{-1}}}}$"
+                    r"$u_1 \; / \; \mathrm{L \cdot h^{-1}}$", 
+                    r"$u_2 \; / \; \mathrm{L \cdot h^{-1}}$"
                 ],
                 "ylabel": [
-                    r"$u_1 \; / \; \mathrm{{L \cdot h^{{-1}}}}$", 
-                    r"$u_2 \; / \; \mathrm{{L \cdot h^{{-1}}}}$"
+                    r"$u_1 \; / \; \mathrm{L \cdot h^{-1}}$", 
+                    r"$u_2 \; / \; \mathrm{L \cdot h^{-1}}$"
                 ]
             },
             {
                 "cols": ["y1", "y2", "y3"],
                 "labels": [
-                    r"$y_1 \; / \; \mathrm{{L}}$", 
-                    r"$y_2 \; / \; \mathrm{{g \cdot L^{{-1}}}}$", 
-                    r"$y_3 \; / \; \mathrm{{g \cdot L^{{-1}}}}$"
+                    r"$y_1 \; / \; \mathrm{L}$", 
+                    r"$y_2 \; / \; \mathrm{g \cdot L^{-1}}$", 
+                    r"$y_3 \; / \; \mathrm{g \cdot L^{-1}}$"
                 ],
                 "ylabel": [
-                    r"$y_1 \; / \; \mathrm{{L}}$", 
-                    r"$y_2 \; / \; \mathrm{{g \cdot L^{{-1}}}}$", 
-                    r"$y_3 \; / \; \mathrm{{g \cdot L^{{-1}}}}$"
+                    r"$y_1 \; / \; \mathrm{L}$", 
+                    r"$y_2 \; / \; \mathrm{g \cdot L^{-1}}$", 
+                    r"$y_3 \; / \; \mathrm{g \cdot L^{-1}}$"
                 ]
             }
         ]
 
-    def parse_state(self, state):
-        return {
-            "volume": state[0].item() if torch.is_tensor(state) else state[0],
-            "cell_density": state[1].item() if torch.is_tensor(state) else state[1],
-            "nutrient": state[2].item() if torch.is_tensor(state) else state[2],
-            "protein": state[3].item() if torch.is_tensor(state) else state[3],
-            "inducer": state[4].item() if torch.is_tensor(state) else state[4],
-            "shock_factor": state[5].item() if torch.is_tensor(state) else state[5],
-            "recovery_factor": state[6].item() if torch.is_tensor(state) else state[6]
-        }
-    
+# Default hyperparameter configuration
 hyperparam_config_IndForProteinProductionPlant = {
     "plant": {
         # --- Kinematic & Yield Parameters (Lee & Ramirez Model) ---
@@ -276,21 +341,23 @@ hyperparam_config_IndForProteinProductionPlant = {
         "loss_function": "MSELoss()",
         "lr_decay_rate": 1, # 0.98,     # Multiplicative factor per epoch decay
         "min_correlation_threshold": -1.1,
-        "n_y": 2,
-        "n_u": 2,
+        "n_y": 1,
+        "n_u": 1,
         "test_min_epochs": 3,
         "test_min_delta": 0.0001,
         "lookback_offset": 10,
+        "test_patience_epochs": 3,
+        "mini_batch_size": 1
     },
     "training_data_cfg": {        
-        "batch_size": 10000,
+        "batch_size": 100,
         "seq_len": 1501,
         "dt": 0.01,
         "input_dim": 2,            
         "output_dim": 3,
         "min_correlation_threshold": -1.1,
-        "n_u": 2,
-        "n_y": 2,
+        "n_u": 1,
+        "n_y": 1,
 
         "u_1_D_center_min": 0.05,
         "u_1_D_center_max": 0.80,
@@ -330,8 +397,9 @@ hyperparam_config_IndForProteinProductionPlant = {
         
     },
     "mamba": {
-        "d_state": 32,             # State expansion dimension space
-        "expand": 1               # Core internal block expansion coefficient width
+        "d_state": 1,
+        "expand": 1,
+        "d_conv" : 1
     },
     "simulate": {
         "batch_size": 16,          # Validation trajectory evaluation batch scale

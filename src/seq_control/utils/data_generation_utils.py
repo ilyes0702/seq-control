@@ -2,25 +2,25 @@
 Data Generation Utility Functions
 =================================
 
-This module contains utilities for the generation of training input signals and in-silico simulation data.
+This module contains utility functions for the generation of training input signals and in-silico simulation data.
+
+Key Features
+------------
+* **
 """
 
+# Import standard libraries
 import os
 import numpy as np
 import torch
 import pandas as pd
 
-import numpy as np
-import pandas as pd
-
 # Import utilities
+from seq_control.config import *
 from seq_control.utils.saving_and_loading_utils import *
 from seq_control.utils.plotting_utils import *
 
-plt.style.use("src/seq_control/style.mplstyle")
-
-
-
+#=== FUNCTION TO GENERATE SINGLE CONTROL SIGNAL ===#
 def generate_signal_single(training_data_cfg, channel_idx=1):
     """Generates smooth, band-limited control signals using an Active Shielding methodology.
 
@@ -151,7 +151,7 @@ def generate_signal_single(training_data_cfg, channel_idx=1):
 
     return u_buffer, u_center
 
-
+#=== FUNCTION TO GENERATE INPUT SIGNALS ===#
 def generate_signals(training_data_cfg):
     """Generates independent MIMO control vectors using index-aware tracking.
 
@@ -193,7 +193,7 @@ def generate_signals(training_data_cfg):
 
     return u_buffer, D_center
 
-
+#=== FUNCTION TO GENERATE A MIX OF CONSTANT STEP SIGNALS AND RANDOM SIGNALS ===#
 def generate_signals_mix(hyperparam_config):
     """Generates independent MIMO control vectors mixing Canaday signals with constant step signals.
 
@@ -265,45 +265,7 @@ def generate_signals_mix(hyperparam_config):
 
     return u_buffer, D_center
 
-
-import torch
-
-def split_dataset_dict(dataset_dict, train_ratio=0.9, shuffle=True, seed=42):
-    X = dataset_dict["X_raw"]
-    Y = dataset_dict["Y_raw"]
-    
-    num_traces = X.shape[0]
-    
-    if seed is not None:
-        torch.manual_seed(seed)
-        
-    if shuffle:
-        indices = torch.randperm(num_traces)
-    else:
-        indices = torch.arange(num_traces)
-        
-    train_size = int(num_traces * train_ratio)
-    train_indices = indices[:train_size]
-    val_indices = indices[train_size:]
-    
-    train_dataset = {
-        "X_raw": X[train_indices],
-        "Y_raw": Y[train_indices]
-    }
-    
-    val_dataset = {
-        "X_raw": X[val_indices],
-        "Y_raw": Y[val_indices]
-    }
-    
-    print(f"✂️ Dataset Split Complete:")
-    print(f" ↳ Train: {train_dataset['X_raw'].shape[0]} traces -> {train_dataset['X_raw'].shape}")
-    print(f" ↳ Val:   {val_dataset['X_raw'].shape[0]} traces -> {val_dataset['X_raw'].shape}")
-    
-    return train_dataset, val_dataset
-
-
-
+#=== FUNCTION TO GENERATE BATCH OF PLANT TRAINING DATA ===#
 def generate_training_batch(plant, training_data_cfg):
     """Simulates the physical system plant and generates raw, continuous time-series arrays.
 
@@ -366,7 +328,11 @@ def generate_training_batch(plant, training_data_cfg):
 
     return raw_u, raw_y, raw_states, D_center
 
-def create_sliced_window_dataset_sysid(Y_trajectories, U_trajectories, n_y, n_u, dirname):
+#=== FUNCTION TO CREATE SLICED WINDOW DATASET FOR SYSTEM IDENTIFICATION ===#
+def create_sliced_window_dataset_sysid(Y_trajectories, 
+                                       U_trajectories, 
+                                       n_y, 
+                                       n_u):
     """
     Slices raw batch continuous MIMO trajectories into history-windowed features 
     and targets for a system identifier.
@@ -443,24 +409,33 @@ def create_sliced_window_dataset_sysid(Y_trajectories, U_trajectories, n_y, n_u,
         "X_raw": torch.from_numpy(X_raw).float(),
         "Y_raw": torch.from_numpy(Y_raw).float()
     }
-
     return dataset_dict
 
-
-def create_sliced_window_dataset_ic(Y_trajectories, U_trajectories, n_y, n_u, dirname):
+#=== FUNCTION TO CREATE SLICED WINDOW DATASET FOR INVERSE CONTROL ===#
+def create_sliced_window_dataset_ic(Y_trajectories, 
+                                    U_trajectories, 
+                                    n_y, 
+                                    n_u):
     """
     Slices raw batch continuous MIMO trajectories into history-windowed features 
-    and targets for an inverse controller.
-    
-    Parameters:
-        Y_trajectories: Tensor or NumPy array of shape [Num_Traces, Seq_Len, input_dim] (Plant Outputs)
-        U_trajectories: Tensor or NumPy array of shape [Num_Traces, Seq_Len, output_dim] (Control Inputs)
-        n_y: Number of past plant output lookbacks (excluding current y_k)
-        n_u: Number of past control action lookbacks
-        
-    Returns:
-        X_raw: NumPy array of shape [Num_Traces, Sliding_Seq_Len, Feature_Dim]
-        Y_raw: NumPy array of shape [Num_Traces, Sliding_Seq_Len, output_dim]
+    and targets for a system identifier.
+
+    :param Y_trajectories: Plant outputs tensor or array of shape 
+        ``[Num_Traces, Seq_Len, output_dim]``.
+    :type Y_trajectories: torch.Tensor or numpy.ndarray
+    :param U_trajectories: Control inputs tensor or array of shape 
+        ``[Num_Traces, Seq_Len, input_dim]``.
+    :type U_trajectories: torch.Tensor or numpy.ndarray
+    :param n_y: Number of past plant output lookbacks (excluding current :math:`y_k`).
+    :type n_y: int
+    :param n_u: Number of past control action lookbacks.
+    :type n_u: int
+
+    :returns: A dictionary containing the windowed feature and target tensors:
+
+        * **"X_raw"** (*torch.Tensor*): Feature tensor of shape ``[Num_Traces, Sliding_Seq_Len, Feature_Dim]``.
+        * **"Y_raw"** (*torch.Tensor*): Target output tensor of shape ``[Num_Traces, Sliding_Seq_Len, output_dim]``.
+    :rtype: dict[str, torch.Tensor]
     """
     # Convert PyTorch tensors to NumPy arrays if necessary
     if torch.is_tensor(Y_trajectories):
@@ -528,11 +503,26 @@ def create_sliced_window_dataset_ic(Y_trajectories, U_trajectories, n_y, n_u, di
     
     return dataset_dict
 
-import torch
-
+#=== FUNCTION TO SPLIT INPUT/OUTPUT DATASET INTO TRAINING AND VALIDATION SET ===#
 def split_io_data(io_data, train_ratio=0.9, shuffle=True, seed=42):
     """
-    Splits raw trajectory I/O dictionary along trace dimension 0.
+    Splits a raw trajectory I/O dictionary along the trace dimension (dimension 0).
+
+    :param io_data: Dictionary mapping key names to PyTorch tensors or NumPy arrays 
+        containing trajectory data, where each array/tensor has shape ``[num_traces, ...]``.
+    :type io_data: dict[str, torch.Tensor or numpy.ndarray]
+    :param train_ratio: Ratio of traces to allocate to the training split, defaults to 0.9.
+    :type train_ratio: float, optional
+    :param shuffle: Whether to shuffle trace indices before splitting, defaults to True.
+    :type shuffle: bool, optional
+    :param seed: Random seed for reproducibility. If ``None``, no seed is set, defaults to 42.
+    :type seed: int or None, optional
+
+    :returns: A tuple containing:
+
+        * **train_io** (*dict*): Dictionary with training trajectory subsets.
+        * **val_io** (*dict*): Dictionary with validation trajectory subsets.
+    :rtype: tuple[dict, dict]
     """
     num_traces = io_data["u"].shape[0]
     
@@ -554,6 +544,7 @@ def split_io_data(io_data, train_ratio=0.9, shuffle=True, seed=42):
     
     return train_io, val_io
 
+#=== FUNCTION TO GENERATE INPUT/OUTPUT DATASET ===#
 def generate_io_dataset(
     plant,
     training_data_cfg,
@@ -970,8 +961,7 @@ def generate_io_dataset(
         Y_trajectories=dataset_io["y"],
         U_trajectories=dataset_io["u"],
         n_y=training_data_cfg["n_y"],
-        n_u=training_data_cfg["n_u"],
-        dirname=ic_dir
+        n_u=training_data_cfg["n_u"]
     )
     save_dataset(dataset_sw_ic, 
                  ic_dir, 
@@ -982,8 +972,7 @@ def generate_io_dataset(
         Y_trajectories=train_data_io["y"],
         U_trajectories=train_data_io["u"],
         n_y=training_data_cfg["n_y"],
-        n_u=training_data_cfg["n_u"],
-        dirname=ic_dir
+        n_u=training_data_cfg["n_u"]
     )
     save_dataset(train_data_sw_ic, 
                  ic_dir, 
@@ -994,8 +983,7 @@ def generate_io_dataset(
         Y_trajectories=val_data_io["y"],
         U_trajectories=val_data_io["u"],
         n_y=training_data_cfg["n_y"],
-        n_u=training_data_cfg["n_u"],
-        dirname=ic_dir
+        n_u=training_data_cfg["n_u"]
     )
     save_dataset(val_data_sw_ic, 
                  ic_dir, 
@@ -1011,8 +999,7 @@ def generate_io_dataset(
         Y_trajectories=dataset_io["y"],
         U_trajectories=dataset_io["u"],
         n_y=training_data_cfg["n_y"],
-        n_u=training_data_cfg["n_u"],
-        dirname=sysid_dir
+        n_u=training_data_cfg["n_u"]
     )
     save_dataset(dataset_sw_sysid, 
                  sysid_dir, 
@@ -1023,8 +1010,7 @@ def generate_io_dataset(
         Y_trajectories=train_data_io["y"],
         U_trajectories=train_data_io["u"],
         n_y=training_data_cfg["n_y"],
-        n_u=training_data_cfg["n_u"],
-        dirname=sysid_dir
+        n_u=training_data_cfg["n_u"]
     )
     save_dataset(train_data_sw_sysid, 
                  sysid_dir, 
@@ -1035,8 +1021,7 @@ def generate_io_dataset(
         Y_trajectories=val_data_io["y"],
         U_trajectories=val_data_io["u"],
         n_y=training_data_cfg["n_y"],
-        n_u=training_data_cfg["n_u"],
-        dirname=sysid_dir
+        n_u=training_data_cfg["n_u"]
     )
     save_dataset(val_data_sw_sysid, 
                  sysid_dir, 

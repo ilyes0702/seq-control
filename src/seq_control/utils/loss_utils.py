@@ -4,9 +4,12 @@ Loss Utility Functions
 
 This module contains utilities for 
 """
+
+# Import standard libraries
 import torch
 import torch.nn as nn
 
+# NORMALIZED RMSE LOSS 
 class NormalizedRMSELoss(nn.Module):
     def __init__(self, eps=1e-8, reduction='none'):
         """

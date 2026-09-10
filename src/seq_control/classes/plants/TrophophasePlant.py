@@ -1,25 +1,52 @@
 import torch
-from src.seq_control.classes.plants.BasePlant import *
+
 
 class TrophophasePlant:
+    """Trophophase bioprocess plant simulation model.
+
+    Models a 2-state fed-batch bioprocess system representing the trophophase 
+    (growth phase) of fermentation with a time-dependent reactor volume :math:`V(t)` 
+    and Monod growth kinetics. Integrated via a 5th-order Dormand-Prince (RK45) 
+    numerical solver scheme.
+
+    :param hyperparam_config: Configuration dictionary containing device ('train'),
+        time step ('training_data_cfg'), and kinetic/bioprocess parameters ('plant').
+    :type hyperparam_config: dict
+    """
+
     def __init__(self, hyperparam_config):
+        """Initialize plant physical parameters, kinetic constants, and device placement.
+
+        :param hyperparam_config: Nested configuration dictionary containing training 
+            and plant parameters.
+        :type hyperparam_config: dict
+        """
         self.device = hyperparam_config["train"]["device"]
         self.dt = hyperparam_config["training_data_cfg"]["dt"]
         self.plant_cfg = hyperparam_config["plant"]
 
         # Biological and physical parameters from Table 1
         self.mu_max = self.plant_cfg["mu_max"]      # [1/h]
-        self.Ks = self.plant_cfg["Ks"]         # [mg S/l]
-        self.m_S = self.plant_cfg["m_S"]        # [mg S/(g TS h)]
-        self.p1 = self.plant_cfg["p1"]      # [g TS/(mg S)]
-        self.p2 = self.plant_cfg["p2"]     # [mg S/l]
+        self.Ks = self.plant_cfg["Ks"]              # [mg S/l]
+        self.m_S = self.plant_cfg["m_S"]            # [mg S/(g TS h)]
+        self.p1 = self.plant_cfg["p1"]              # [g TS/(mg S)]
+        self.p2 = self.plant_cfg["p2"]              # [mg S/l]
 
         self.hyperparam_config = hyperparam_config
 
     def get_volume(self, t):
-        """
-        Calculates the time-dependent reactor volume V(t) based on Table 1:
-        V(t) = 150 + 2*(t - 5)*sigma(t - 5) - 2*(t - 15)*sigma(t - 15)
+        """Calculate the time-dependent reactor volume :math:`V(t)`.
+
+        Computes volume according to a piecewise ramp function with linear filling 
+        and holding intervals:
+        
+        .. math::
+            V(t) = 150 + 2(t - 5)\\sigma(t - 5) - 2(t - 15)\\sigma(t - 15)
+
+        :param t: Current simulation time or timestamp tensor.
+        :type t: float or int or torch.Tensor
+        :returns: Computed reactor volume :math:`V(t)` matching the target execution device.
+        :rtype: torch.Tensor
         """
         # Ensure t is a tensor for element-wise operations
         if not isinstance(t, torch.Tensor):
@@ -31,10 +58,18 @@ class TrophophasePlant:
         return 150.0 + 2.0 * ramp1 - 2.0 * ramp2
 
     def get_initial_state(self, batch_size, randomize=True):
-        """
-        Returns [batch_size, 2] tensor of [Biomass Mass (x1), Substrate Mass (x2)].
-        If randomize is True, initial values are randomized within ±5% of nominal values.
-        If randomize is False, nominal configuration values are used uniformly.
+        """Generate initial state vectors for a batch of simulation trajectories.
+
+        State vector components layout:
+        ``[x1 (Biomass mass), x2 (Substrate mass)]``
+
+        :param batch_size: Number of parallel batch instances to sample.
+        :type batch_size: int
+        :param randomize: If True, applies uniform random scaling within range ``[0.95, 1.05)`` 
+            around nominal values. If False, fills strictly with nominal values. Defaults to True.
+        :type randomize: bool, optional
+        :returns: Initial state tensor of shape ``(batch_size, 2)``.
+        :rtype: torch.Tensor
         """
         # Fetch nominal values from config
         x1_nominal = self.hyperparam_config["plant"]["x10"]
@@ -52,9 +87,20 @@ class TrophophasePlant:
         return torch.cat([x1_values, x2_values], dim=1)
 
     def get_y(self, state, t):
-        """
-        Calculates and returns the Growth Rate y1 = mu(x2) as the observable output tracker.
-        Note: x2 is mass, so substrate concentration is c2 = x2 / V(t).
+        """Compute the observable plant output (specific growth rate :math:`\\mu`).
+
+        Calculates specific growth rate according to Monod growth kinetics based on 
+        substrate concentration :math:`c_2 = x_2 / V(t)`:
+
+        .. math::
+            y = \\mu(c_2) = \\frac{\\mu_{\\mathrm{max}} c_2}{K_s + c_2}
+
+        :param state: Plant state tensor of shape ``(batch_size, 2)`` containing ``[x1, x2]``.
+        :type state: torch.Tensor
+        :param t: Current simulation time step or timestamp.
+        :type t: float or int or torch.Tensor
+        :returns: Computed specific growth rate :math:`\\mu` of shape ``(batch_size, 1)``.
+        :rtype: torch.Tensor
         """
         x2 = state[:, 1:2]
         V = self.get_volume(t)
@@ -62,13 +108,23 @@ class TrophophasePlant:
         # Substrate concentration c2
         c2 = x2 / V
         
-        # Monod growth kinetics: mu(x2) = (mu_max * x2) / (Ks * V + x2)
-        # Separated into concentration components: (mu_max * c2) / (Ks + c2)
+        # Monod growth kinetics
         mu = (self.mu_max * c2) / (self.Ks + c2)
         return mu
-    
+
     def get_v_dot(self, t):
-        """Calculates dV/dt using Heaviside step functions."""
+        """Calculate the time derivative of reactor volume :math:`\\mathrm{d}V/\\mathrm{d}t`.
+
+        Evaluates rate of volume change using Heaviside step functions :math:`\\sigma(t)`:
+
+        .. math::
+            \\frac{\\mathrm{d}V}{\\mathrm{d}t} = 2\\sigma(t - 5) - 2\\sigma(t - 15)
+
+        :param t: Current simulation time or timestamp tensor.
+        :type t: float or int or torch.Tensor
+        :returns: Time derivative of volume :math:`\\mathrm{d}V/\\mathrm{d}t`.
+        :rtype: torch.Tensor
+        """
         if not isinstance(t, torch.Tensor):
             t = torch.tensor(t, device=self.device, dtype=torch.float32)
         
@@ -79,8 +135,21 @@ class TrophophasePlant:
         return 2.0 * sigma1 - 2.0 * sigma2
 
     def get_y_dot(self, state, u1, t):
-        """
-        Calculates the first derivative of the growth rate (dy/dt).
+        """Calculate the first time derivative of specific growth rate :math:`\\mathrm{d}y/\\mathrm{d}t`.
+
+        Computes the rate of change of observable output :math:`y = \\mu(c_2)` using the chain rule:
+
+        .. math::
+            \\frac{\\mathrm{d}y}{\\mathrm{d}t} = \\frac{\\mathrm{d}y}{\\mathrm{d}c_2} \\cdot \\frac{\\mathrm{d}c_2}{\\mathrm{d}t}
+
+        :param state: Plant state tensor of shape ``(batch_size, 2)`` containing ``[x1, x2]``.
+        :type state: torch.Tensor
+        :param u1: Applied substrate feed control input tensor of shape ``(batch_size, 1)``.
+        :type u1: torch.Tensor
+        :param t: Current simulation time.
+        :type t: float or int or torch.Tensor
+        :returns: First derivative :math:`\\mathrm{d}y/\\mathrm{d}t` of shape ``(batch_size, 1)``.
+        :rtype: torch.Tensor
         """
         x1, x2 = state[:, 0:1], state[:, 1:2]
         V = self.get_volume(t)
@@ -102,9 +171,21 @@ class TrophophasePlant:
         return y_dot
 
     def get_y_ddot(self, state, u1, t, u1_dot=0.0):
-        """
-        Calculates the second derivative of the growth rate (d^2y/dt^2).
-        Assumes u1_dot (du1/dt) is 0.0 unless provided.
+        """Calculate the second time derivative of specific growth rate :math:`\\mathrm{d}^2y/\\mathrm{d}t^2`.
+
+        Computes acceleration of observable output :math:`y = \\mu(c_2)` incorporating higher-order 
+        concentration derivatives and state trajectories.
+
+        :param state: Plant state tensor of shape ``(batch_size, 2)`` containing ``[x1, x2]``.
+        :type state: torch.Tensor
+        :param u1: Applied substrate feed control input tensor of shape ``(batch_size, 1)``.
+        :type u1: torch.Tensor
+        :param t: Current simulation time.
+        :type t: float or int or torch.Tensor
+        :param u1_dot: First time derivative of control input :math:`\\mathrm{d}u_1/\\mathrm{d}t`, defaults to 0.0.
+        :type u1_dot: float or torch.Tensor or int, optional
+        :returns: Second derivative :math:`\\mathrm{d}^2y/\\mathrm{d}t^2` of shape ``(batch_size, 1)``.
+        :rtype: torch.Tensor
         """
         x1, x2 = state[:, 0:1], state[:, 1:2]
         V = self.get_volume(t)
@@ -123,7 +204,6 @@ class TrophophasePlant:
         y_dot = dy_dc2 * c2_dot
         
         # Secondary derivatives for state equations
-        # d^2x2/dt^2 = -(1/p1)*(y_dot*x1 + y*dx1dt) - m_S*dx1dt + p2*u1_dot
         dx2dt_dot = -(1.0 / self.p1) * (y_dot * x1 + y * dx1dt) - self.m_S * dx1dt + self.p2 * u1_dot
         
         # d^2c2/dt^2
@@ -138,11 +218,25 @@ class TrophophasePlant:
         return y_ddot
 
     def dynamics(self, x1, x2, u1, t):
-        """
-        Calculates continuous derivative transformations for the trophophase system.
-        Equations (1):
-          dx1/dt = mu(x2) * x1
-          dx2/dt = - (1/p1) * mu(x2) * x1 - m_S * x1 + p2 * u1
+        """Compute state derivative vector :math:`\\mathrm{d}x/\\mathrm{d}t` for the trophophase model.
+
+        Evaluates continuous differential equations governing biomass mass (:math:`x_1`) 
+        and substrate mass (:math:`x_2`):
+
+        .. math::
+            \\frac{\\mathrm{d}x_1}{\\mathrm{d}t} &= \\mu(c_2) x_1 \\\\
+            \\frac{\\mathrm{d}x_2}{\\mathrm{d}t} &= -\\frac{1}{p_1} \\mu(c_2) x_1 - m_S x_1 + p_2 u_1
+
+        :param x1: Biomass mass state tensor of shape ``(batch_size, 1)``.
+        :type x1: torch.Tensor
+        :param x2: Substrate mass state tensor of shape ``(batch_size, 1)``.
+        :type x2: torch.Tensor
+        :param u1: Substrate feed control input tensor of shape ``(batch_size, 1)``.
+        :type u1: torch.Tensor
+        :param t: Current simulation time.
+        :type t: float or int or torch.Tensor
+        :returns: Tuple ``(dx1dt, dx2dt)`` containing state continuous derivatives.
+        :rtype: tuple[torch.Tensor, torch.Tensor]
         """
         V = self.get_volume(t)
         c2 = x2 / V
@@ -156,8 +250,22 @@ class TrophophasePlant:
         return dx1dt, dx2dt
 
     def step(self, state, u, t, dt):
-        """
-        Dormand-Prince (RK45) integration accounting for explicitly time-dependent dynamics.
+        """Perform dynamic state integration using the Dormand-Prince (RK45) scheme.
+
+        Advances the system state forward across time step ``dt`` using a 5th-order accurate 
+        embedded Runge-Kutta numerical solver step.
+
+        :param state: Current state tensor of shape ``(batch_size, 2)``.
+        :type state: torch.Tensor
+        :param u: Applied control input (dilution/feed rate) tensor of shape ``(batch_size, 1)``.
+        :type u: torch.Tensor
+        :param t: Current simulation start time.
+        :type t: float or int or torch.Tensor
+        :param dt: Time integration step size.
+        :type dt: float or int or torch.Tensor
+        :returns: Tuple ``(state_next, y_next)`` containing updated state tensor of shape 
+            ``(batch_size, 2)`` and observable output tensor of shape ``(batch_size, 1)``.
+        :rtype: tuple[torch.Tensor, torch.Tensor]
         """
         x1, x2 = state[:, 0:1], state[:, 1:2]
         
@@ -198,14 +306,18 @@ class TrophophasePlant:
         # Return next state and tracking output evaluated at t + dt
         return state_next, self.get_y(state_next, t + dt)
 
-
     def get_plot_config(self):
+        """Configure matplotlib visualization metadata and LaTeX labels for simulation plots.
+
+        :returns: List of plotting configuration dictionaries specifying columns, labels, and axis titles.
+        :rtype: list[dict]
+        """
         return [
             {
                 "cols": ["t"],
                 "labels": [r"$t$ [$\mathrm{h}$]"],
                 "xlabel": [r"$t$ [$\mathrm{h}$]"]
-                        },
+            },
             {
                 "cols": ["x_1", "x_2"],
                 "labels": [r"$x_1$ [$\mathrm{g}$]", r"$x_2$ [$\mathrm{mg}$]"],
@@ -223,36 +335,7 @@ class TrophophasePlant:
             }
         ]
 
-    def parse_state(self, state):
-        return {
-            "biomass_concentration": state[0].item() if torch.is_tensor(state) else state[0],
-            "substrate_concentration": state[1].item() if torch.is_tensor(state) else state[1]
-        }
-    
-class TrophophaseWrapper(BasePlant):
-    def __init__(self, chemostat_plant_instance):
-        self.plant = chemostat_plant_instance
-
-    @property
-    def state_dim(self) -> int:
-        return 2  # [Biomass x, Substrate s]
-
-    @property
-    def control_dim(self) -> int:
-        return 1  # [Dilution rate u]
-
-    @property
-    def output_dim(self) -> int:
-        return 1  # [Growth rate y]
-
-    @property
-    def device(self):
-        return self.plant.device
-
-    def step(self, state, u, t, dt):
-        # Pass time step 't' through to the plant model
-        return self.plant.step(state, u, t=t, dt=dt)
-    
+# Default hyperparameter configuration
 hyperparam_config_TrophophasePlant = {
     "plant" :{
         "mu_max": 0.12,
@@ -278,8 +361,6 @@ hyperparam_config_TrophophasePlant = {
 
         "input_dim": 1,  # y
         "output_dim": 1  # u
-
-        
     },
     "training_data_cfg" : {
         "batch_size": 100,
@@ -333,8 +414,7 @@ hyperparam_config_TrophophasePlant = {
     "mamba": {
         "expand": 9,
         "d_state": 31,
-        "d_conv": 9,
-        "n_layer": 5
+        "d_conv": 9
     },
 
     "esn": {
@@ -355,6 +435,13 @@ hyperparam_config_TrophophasePlant = {
         "num_layers" : 6,
         "dim_feedforward" : 256,
         "max_seq_len" : 2000
+    },
+
+    "lstm":{
+        "hidden_size": 16,
+        "num_layers": 1,
+        "dropout": 0.1
+
     },
     "transformer_param_space":  {
     "transformer.nhead":           {"type": "categorical", "choices": [1, 2, 3]}, # Must divide d_model

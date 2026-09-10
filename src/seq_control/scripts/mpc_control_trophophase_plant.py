@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 from src.seq_control.classes.plants.TrophophasePlant import *
-from src.seq_control.classes.controllers.MPCController import *
+from src.seq_control.classes.sequence_models.MPCController import *
 from src.seq_control.utils.validation_utils import *
 
 # ==========================================

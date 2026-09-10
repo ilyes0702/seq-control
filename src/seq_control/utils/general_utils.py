@@ -2,74 +2,48 @@
 General Utility Functions
 =========================
 
-This module contains 
+This module provides essential utility functions and system helpers supporting sequence-based 
+control systems, experimental reproducibility, and model introspection.
+
+Key Features
+------------
+* **Tracking Performance Evaluation**: Computes dynamic plant output tracking metrics 
+  (MAE, MAPE, MSE, RMSE, IAE, ISE, Max Error, Time-in-Band) and writes detailed CSV reports.
+* **Global Determinism & Seeding**: Configures seed states across Python, NumPy, PyTorch CPU/GPU, 
+  and cuDNN backends to ensure reproducible training and evaluation runs.
+* **SSM State Extraction**: Inspects selective state-space neural architectures (e.g., Mamba) 
+  to extract continuous-time matrices (:math:`A`, :math:`B`, :math:`C`, :math:`D`) and discretized 
+  system matrices (:math:`\\bar{A}`, :math:`\\bar{B}`).
 """
-
-
 
 # Import standard libraries
 import os
+import random
 import numpy as np
 import pandas as pd
-
-from seq_control.utils.plotting_utils import *
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from einops import rearrange
 
 # import machine learning modules
 from seq_control.decorators.general_decorators import *
 from seq_control.utils.saving_and_loading_utils import *
 from seq_control.config import *
+from seq_control.utils.plotting_utils import *
 
-import torch
-import matplotlib.pyplot as plt
-import random
-
-
-
-import pickle
-
-
-def compute_trajectory_metrics(y_true, y_pred, dt, eps=1e-8):
-    """
-    Computes trajectory error metrics averaged across time steps and features.
+#=== FUNCTION TO COUNT THE PARAMETERS OF A SEQUENCE MODEL ===#
+def count_seq_model_params(model):
     
-    Args:
-        y_true: np.ndarray of shape (N_samples, seq_len, dim) or (seq_len, dim)
-        y_pred: np.ndarray of shape (N_samples, seq_len, dim) or (seq_len, dim)
-        dt: float, time step interval
-        eps: small constant to avoid division by zero
-        
-    Returns:
-        dict containing MSE, RMSE, MAE, MAPE, NRMSE, IAE, and ISE
-    """
-    error = y_true - y_pred
-    abs_error = np.abs(error)
-    sq_error = error ** 2
+        # Total parameters (trainable + non-trainable)
+        total_params = sum(p.numel() for p in model.parameters())
 
-    # Pointwise trajectory metrics (full float precision)
-    mse = float(np.mean(sq_error))
-    rmse = float(np.sqrt(mse))
-    mae = float(np.mean(abs_error))
-    mape = float(np.mean(abs_error / (np.abs(y_true) + eps)) * 100.0)
-    
-    # Normalized RMSE by standard deviation of ground truth
-    std_true = float(np.std(y_true))
-    nrmse = float(rmse / (std_true + eps))
-    
-    # Integral metrics per trajectory sequence, averaged across trajectories and features
-    iae = float(np.mean(np.sum(abs_error, axis=-2) * dt))
-    ise = float(np.mean(np.sum(sq_error, axis=-2) * dt))
+        # Trainable parameters only
+        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
-    return {
-        "MSE": mse,
-        "RMSE": rmse,
-        "MAE": mae,
-        "MAPE": mape,
-        "NRMSE": nrmse,
-        "IAE": iae,
-        "ISE": ise
-    }
+        print(f"Total parameters: {total_params:,}")
+        print(f"Trainable parameters: {trainable_params:,}")
 
-    
 #=== FUNCTION TO COMPUTE AND SAVE TRACKING METRICS ===#
 def compute_and_save_tracking_metrics(
     y_np,        # Actual output [steps, batch_size]
@@ -80,8 +54,31 @@ def compute_and_save_tracking_metrics(
     suffix=None
 ):
     """
-    Pure tracking metrics for curve comparison including MAPE.
-    Calculates how well the plant output follows a dynamic reference.
+    Computes trajectory tracking metrics against a reference signal and saves performance reports.
+
+    Calculates integral and dynamic metrics (MAE, MAPE, MSE, RMSE, IAE, ISE, Max Error, 
+    and Time-in-Band Percentage) across multiple batch trajectories and saves both 
+    per-trajectory and summary statistics as CSV files.
+
+    :param y_np: Actual plant output trajectories array of shape ``[steps, batch_size]``.
+    :type y_np: numpy.ndarray
+    :param ref_np: Dynamic or static reference trajectory of shape ``[steps, batch_size]``, 
+        ``[steps]``, or a scalar value.
+    :type ref_np: numpy.ndarray or float
+    :param dt: Sampling time interval between consecutive discrete time steps.
+    :type dt: float
+    :param dirname: Directory path where output CSV files will be written.
+    :type dirname: str or pathlib.Path
+    :param settle_tol: Relative error threshold defining the tracking tolerance band 
+        (e.g., 0.05 corresponds to 5%), defaults to 0.05.
+    :type settle_tol: float, optional
+    :param suffix: Optional string tag appended to the generated CSV filenames, 
+        defaults to None.
+    :type suffix: str or None, optional
+
+    :returns: DataFrame indexed by trajectory containing calculated tracking metrics for 
+        each batch trace.
+    :rtype: pandas.DataFrame
     """
     steps, batch_size = y_np.shape
     
@@ -136,37 +133,24 @@ def compute_and_save_tracking_metrics(
 
     return df
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 #=== FUNCTION TO SEED EVERYTHING FOR REPRODUCIBILITY ===#
 def seed_everything(seed=42):
     """
     Seeds all relevant libraries to ensure reproducible results.
 
-    Parameters:
-    - seed (int): The numerical seed value used to initialize all random number generators (default: 42).
+    Enforces absolute determinism across various execution contexts by explicitly 
+    binding the seed to Python's core ``random`` module, environment variables, 
+    NumPy, and both CPU and GPU tensor variants in PyTorch. Additionally, it 
+    overrides standard CUDA Deep Neural Network (cuDNN) runtime configurations to 
+    deactivate dynamic kernel auto-tuning, eliminating stochastic variance across 
+    identical runs.
 
-    Returns:
-    - None: The function configures global runtime states and does not return a value.
+    :param seed: The numerical seed value used to initialize all random number 
+        generators, defaults to 42.
+    :type seed: int, optional
 
-    The function enforces absolute determinism across various execution contexts. It explicitly binds 
-    the seed to Python's core `random` module, environment variables, NumPy's matrix operations, and 
-    both CPU and GPU tensor variants in PyTorch. Finally, it overrides standard CUDA Deep Neural Network 
-    (cuDNN) configurations to deactivate dynamic kernel auto-tuning algorithm selection, completely 
-    eliminating stochastic variance across identical processing runs.
+    :returns: None
+    :rtype: None
     """
     # Seed native Python behaviors and system environments
     random.seed(seed)
@@ -186,49 +170,7 @@ def seed_everything(seed=42):
     
     print(f"Random seed set to: {seed}")
 
-
-def compute_metrics(y_true, y_pred, eps=1e-8):
-    """Computes MSE, RMSE, NRMSE (range-normalized), and MAPE.
-
-    Parameters:
-    -----------
-    y_true : np.ndarray
-        Ground truth sequence of shape (T,) or (T, dim)
-    y_pred : np.ndarray
-        Simulated/predicted sequence of shape (T,) or (T, dim)
-
-    Returns:
-    --------
-    dict with keys: 'MSE', 'RMSE', 'NRMSE', 'MAPE'
-    """
-    y_true = np.asarray(y_true)
-    y_pred = np.asarray(y_pred)
-
-    # 1. Mean Squared Error
-    mse = np.mean((y_true - y_pred) ** 2)
-
-    # 2. Root Mean Squared Error
-    rmse = np.sqrt(mse)
-
-    # 3. Normalized RMSE (Range-normalized: RMSE / (max - min))
-    val_range = np.max(y_true) - np.min(y_true)
-    nrmse = rmse / (val_range + eps)
-
-    # 4. Mean Absolute Percentage Error (percentage scale)
-    mape = np.mean(np.abs((y_true - y_pred) / (np.abs(y_true) + eps))) * 100.0
-
-    return {
-        "MSE": float(mse),
-        "RMSE": float(rmse),
-        "NRMSE": float(nrmse),
-        "MAPE": float(mape),
-    }
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from einops import rearrange
-
+#=== FUNCTION TO EXTRACT SSM MATRICES ===#
 def extract_ssm_matrices_at_step(model, mamba_block, y_t_tensor, y_next_tensor):
     """
     Extracts the analytical SSM matrices (A, B, C, D) and discretized matrices (A_bar, B_bar)
@@ -282,21 +224,8 @@ def extract_ssm_matrices_at_step(model, mamba_block, y_t_tensor, y_next_tensor):
     x, z = xz.chunk(2, dim=1)
 
     # 3. Compute short convolution
-    try:
-        from causal_conv1d import causal_conv1d_fn
-    except ImportError:
-        causal_conv1d_fn = None
-
-    if causal_conv1d_fn is None:
-        x_conv = mamba_block.act(mamba_block.conv1d(x)[..., :seqlen])
-    else:
-        x_conv = causal_conv1d_fn(
-            x=x,
-            weight=rearrange(mamba_block.conv1d.weight, "d 1 w -> d w"),
-            bias=mamba_block.conv1d.bias,
-            activation=mamba_block.activation,
-        )
-
+    x_conv = mamba_block.act(mamba_block.conv1d(x)[..., :seqlen])
+    
     # 4. Pull dynamic projections for the entire sequence
     x_dbl = mamba_block.x_proj(rearrange(x_conv, "b d l -> (b l) d"))
     dt_proj, B_seq, C_seq = torch.split(

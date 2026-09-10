@@ -1,122 +1,51 @@
+"""
+General Decorators
+==================
+
+This module provides reusable general-purpose Python decorators for performance monitoring,
+resource tracking, and utility enhancements across the project.
+
+Functions:
+    * :func:`track_resources`: Measures execution time and peak PyTorch GPU VRAM consumption.
+"""
+
+import functools
 import time
 import pandas as pd
-from seq_control.config import *
-#from dictionaries.variable_names import axis_label_mapping
-
-from seq_control.utils.saving_and_loading_utils import save_df_to_csv
-import functools
 import torch
-import psutil
 
-def measure_resources(func):
-    """Decorator to measure execution time, peak host RAM (RSS),
-
-    peak VRAM allocated, and total execution FLOPs during a PyTorch training run.
-    Appends these metrics directly to the returned summary_df.
-    """
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        # 1. Detect Device & Extract Inputs from function arguments
-        model = kwargs.get("model", args[0] if len(args) > 0 else None)
-        train_data = kwargs.get("train_data", args[1] if len(args) > 1 else None)
-        config = kwargs.get("hyperparam_config", args[3] if len(args) > 3 else None)
-
-        device_str = (
-            str(config["train"].get("device", "cpu")).lower()
-            if config
-            else "cpu"
-        )
-        is_cuda = "cuda" in device_str and torch.cuda.is_available()
-        device = torch.device(device_str if is_cuda else "cpu")
-
-        # 2. Reset VRAM Peak Tracking
-        if is_cuda:
-            torch.cuda.reset_peak_memory_stats(device)
-            torch.cuda.empty_cache()
-
-        # 3. Setup CPU & CUDA Timers
-        if is_cuda:
-            start_event = torch.cuda.Event(enable_timing=True)
-            end_event = torch.cuda.Event(enable_timing=True)
-            start_event.record()
-
-        start_wall = time.perf_counter()
-        process = psutil.Process(os.getpid())
-
-        # 4. Execute Function
-        result = func(*args, **kwargs)
-
-        # 5. Measure Elapsed Time
-        wall_sec = time.perf_counter() - start_wall
-        if is_cuda:
-            end_event.record()
-            torch.cuda.synchronize()
-            gpu_time_min = (start_event.elapsed_time(end_event) / 1000.0) / 60.0
-            time_metric_name = "Execution Time (GPU min)"
-            time_val = gpu_time_min
-        else:
-            time_metric_name = "Execution Time (Wall min)"
-            time_val = wall_sec / 60.0
-
-        # 6. Measure Peak System RAM (RSS)
-        peak_ram_gb = process.memory_info().rss / (1024**3)
-
-        # 7. Measure Peak VRAM Allocated
-        if is_cuda:
-            peak_vram_gb = torch.cuda.max_memory_allocated(device) / (1024**3)
-        else:
-            peak_vram_gb = 0.0
-
-        # 8. Estimate Theoretical FLOPs (Single Batch Pass * Total Steps)
-        total_gflops = 0.0
-        if model is not None and train_data is not None and config is not None:
-            try:
-                total_gflops = _estimate_training_gflops(
-                    model, train_data, config, device
-                )
-            except Exception as e:
-                print(f"⚠️ Could not calculate FLOPs: {e}")
-
-        # 9. Console Output Summary
-        print("\n" + "=" * 50)
-        print("📊 RESOURCE CONSUMPTION SUMMARY")
-        print("=" * 50)
-        print(f"⏱️  {time_metric_name:<28}: {time_val:.3f}")
-        print(f"💾 Peak VRAM Allocated       : {peak_vram_gb:.3f} GB")
-        print(f"🖥️  Peak System RAM (RSS)     : {peak_ram_gb:.3f} GB")
-        print(f"🧮 Total Theoretical Compute  : {total_gflops:.3f} GFLOPs")
-        print("=" * 50 + "\n")
-
-        # 10. Append to returned summary_df if present
-        if (
-            isinstance(result, tuple)
-            and len(result) == 3
-            and isinstance(result[2], pd.DataFrame)
-        ):
-            model_out, history, summary_df = result
-            resource_rows = pd.DataFrame(
-                {
-                    "Metric": [
-                        time_metric_name,
-                        "Peak VRAM Allocated (GB)",
-                        "Peak System RAM (GB)",
-                        "Total Compute Workload (GFLOPs)",
-                    ],
-                    "Value": [time_val, peak_vram_gb, peak_ram_gb, total_gflops],
-                }
-            )
-            updated_summary = pd.concat(
-                [summary_df, resource_rows], ignore_index=True
-            )
-            return model_out, history, updated_summary
-
-        return result
-
-    return wrapper
-
+from seq_control.config import *
+from seq_control.utils.saving_and_loading_utils import save_df_to_csv
 
 #=== DECORATOR TO TRACK GPU RESOURCES ===#
 def track_resources(func):
+    """
+    Decorator to track execution time and peak GPU VRAM consumption of a function.
+
+    Monitors PyTorch CUDA memory allocation and runtime during function execution.
+    It synchronizes CUDA operations before and after execution, records peak VRAM 
+    allocated in gigabytes (GB), prints a resource report to stdout, and exports 
+    the results to a CSV file.
+
+    :param func: The target function or routine to monitor.
+    :type func: callable
+
+    :Keyword Arguments:
+        * **resource_filename** (*str*, optional): 
+          Base filename for saving the CSV metrics. Defaults to ``"<func.__name__>_resource_stats"``.
+        * **resource_dirname** (*str*, optional): 
+          Directory where the CSV file will be saved. Defaults to ``"resource_stats"``.
+
+    :returns: A tuple containing:
+        - **result**: The return value of the wrapped function.
+        - **metrics** (*dict* or *float*): A dictionary with keys ``'gpu_minutes'`` and 
+          ``'peak_vram_gb'`` if CUDA is available, otherwise ``0.0``.
+    :rtype: tuple
+
+    .. note::
+       If CUDA is unavailable (e.g., running on CPU), the wrapped function will execute 
+       normally and return ``(result, 0.0)`` without saving resource reports.
+    """
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         if not torch.cuda.is_available():
@@ -162,42 +91,3 @@ def track_resources(func):
         
     return wrapper
 
-#=== DECORATOR TO LOG EXECUTION TIME ===#
-def log_execution_time(func):
-    """
-    A decorator that measures and logs the execution time of a function.
-
-    The execution time is recorded in seconds and logged using `log_message()`. 
-    The log is saved in a file named `'execution_log.txt'`, providing insights 
-    into function performance.
-
-    Parameters:
-        func (callable): The function being decorated. It can take any arguments and return any value.
-
-    Returns:
-        callable: A wrapped version of `func` that logs its execution time.
-
-    Raises:
-        None
-
-    Additional Details:
-        - Uses `time.time()` to capture start and end times.
-        - Formats timestamps using `time.strftime("%Y-%m-%d %H:%M:%S")` for readability.
-        - Logs execution time in a structured message format: 
-          `"function_name executed in X.XXXXX seconds"`.
-    """
-    def wrapper(*args, **kwargs):
-        start_time = time.time()  # Start timing
-        log_message(f"STARTED {func.__name__}")
-        result = func(*args, **kwargs)  # Execute the original function
-        end_time = time.time()  # End timing
-        execution_time = end_time - start_time
-        
-        # Get the current time in a readable format
-        current_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(start_time))
-        
-        # Log the execution time to a file with the time format
-        log_message(f"ENDED {func.__name__} executed in {execution_time:.5f} seconds")
-        
-        return result  # Return the original function's result
-    return wrapper

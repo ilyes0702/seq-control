@@ -24,11 +24,11 @@ def main() -> None:
 
 	# Define which plants to study and the respective configuration dictionaries
 	plant_list = [
-		# ChemostatPlant(hyperparam_config=hyperparam_config_ChemostatPlant),
+		ChemostatPlant(hyperparam_config=hyperparam_config_ChemostatPlant),
 		TrophophasePlant(hyperparam_config=hyperparam_config_TrophophasePlant),
-		# IdiophasePlant(hyperparam_config=hyperparam_config_IdiophasePlant),
-		# CoCultivationPlant(hyperparam_config=hyperparam_config_CoCultivationPlant),
-		# IndForProteinProductionPlant(hyperparam_config=hyperparam_config_IndForProteinProductionPlant)
+		IdiophasePlant(hyperparam_config=hyperparam_config_IdiophasePlant),
+		CoCultivationPlant(hyperparam_config=hyperparam_config_CoCultivationPlant),
+		IndForProteinProductionPlant(hyperparam_config=hyperparam_config_IndForProteinProductionPlant)
 	]
 
 	# Generate data for the plants defined in plant_list. The data for plant pl can be then found in the folder results/YYYY-MM-DD/YYYY-MM-DD/<pl.__class__.__name__>

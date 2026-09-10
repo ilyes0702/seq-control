@@ -1,7 +1,29 @@
 import torch
-from src.seq_control.classes.plants.BasePlant import *
 
 class ChemostatPlant:
+    """Simulates a continuous chemostat bioreactor plant in PyTorch.
+
+    Models the biological growth process of biomass and substrate consumption 
+    governed by Monod kinetics using explicit Dormand-Prince (RK45) numerical integration.
+
+    .. math::
+
+        \\mu(s) = \\frac{\\mu_{max} \\cdot s}{K_s + s}
+
+        \\frac{dx}{dt} = (\\mu - u) x
+
+        \\frac{ds}{dt} = u (s_R - s) - \\frac{\\mu x}{Y}
+
+    Attributes:
+        VARIABLE_UNITS (dict): Mapping of state and control variable names to physical units.
+        device (torch.device or str): Execution device for tensor operations (CPU or CUDA).
+        dt (float): Simulation step size in hours.
+        mu_max (torch.Tensor): Maximum specific growth rate parameter (:math:`h^{-1}`).
+        Ks (torch.Tensor): Half-saturation affinity constant parameter (:math:`g\\,L^{-1}`).
+        Y (torch.Tensor): Biomass yield coefficient parameter on substrate (:math:`g\\,g^{-1}`).
+        sR (torch.Tensor): Feed substrate concentration parameter (:math:`g\\,L^{-1}`).
+        hyperparam_config (dict): Full hyperparameter configuration dictionary.
+    """
     VARIABLE_UNITS = {
         "x": "g L⁻¹",      # Biomass concentration
         "biomass": "g L⁻¹",
@@ -12,6 +34,13 @@ class ChemostatPlant:
         "u": "h⁻¹",        # Dilution rate (D)
     }
     def __init__(self, hyperparam_config):
+        """Initialize the Chemostat plant model with configuration settings.
+
+        :param hyperparam_config: Dictionary containing plant physical parameters and setup options.
+            Expects keys ``['train']['device']``, ``['training_data_cfg']['dt']``, and
+            ``['plant']`` with keys ``['mu-max']``, ``['Ks']``, ``['Y']``, and ``['sR']``.
+        :type hyperparam_config: dict
+        """
         self.device = hyperparam_config["train"]["device"]
         self.dt = hyperparam_config["training_data_cfg"]["dt"]
 
@@ -23,55 +52,71 @@ class ChemostatPlant:
         self.hyperparam_config = hyperparam_config
 
     def get_initial_state(self, batch_size):
-        """
-        Returns [batch_size, 2] tensor of [Biomass (x), Substrate (s)].
-        Initializes with random biological values to ensure robust learning.
+        """Generate randomized initial state vectors for training batch initialization.
+
+        :param batch_size: Number of parallel batch instances to sample.
+        :type batch_size: int
+        :returns: Tensor of shape ``(batch_size, 2)`` representing initial states ``[x, s]``.
+        :rtype: torch.Tensor
         """
         x_init = torch.rand((batch_size, 1), device=self.device) * 0.2 + 0.2 # 0.1 to 0.6
         s_init = torch.rand((batch_size, 1), device=self.device) * 0.2 + 0.1 # 0.1 to 0.6
         return torch.cat([x_init, s_init], dim=1)
 
     def get_y(self, state, t=None):
-        """
-        Calculates and returns Growth Rate (mu) as the observable plant output tracker.
+        """Compute the observable plant output (specific growth rate :math:`\\mu`).
+
+        Calculates specific growth rate according to the Monod growth kinetics formulation.
+
+        :param state: Plant state tensor of shape ``(batch_size, 2)`` containing ``[x, s]``.
+        :type state: torch.Tensor
+        :param t: Current simulation time step or timestamp, optional.
+        :type t: float or torch.Tensor, optional
+        :returns: Computed specific growth rate :math:`\\mu` of shape ``(batch_size, 1)``.
+        :rtype: torch.Tensor
         """
         s = state[:, 1:2]
         mu = (self.mu_max * s) / (self.Ks + s)
         return mu 
 
     def dynamics(self, x, s, u, t = None):
-        """
-        Calculates continuous derivative transformations for standard Chemostat vessels.
+        """Calculate continuous-time system derivatives for the chemostat process.
+
+        Evaluates differential equations for biomass growth and substrate depletion.
+
+        :param x: Biomass concentration tensor of shape ``(batch_size, 1)``.
+        :type x: torch.Tensor
+        :param s: Substrate concentration tensor of shape ``(batch_size, 1)``.
+        :type s: torch.Tensor
+        :param u: Control input tensor (dilution rate :math:`D`) of shape ``(batch_size, 1)``.
+        :type u: torch.Tensor
+        :param t: Current simulation time, optional.
+        :type t: float or torch.Tensor, optional
+        :returns: Tuple containing ``(dxdt, dsdt)`` derivative tensors each of shape ``(batch_size, 1)``.
+        :rtype: tuple[torch.Tensor, torch.Tensor]
         """
         mu = (self.mu_max * s) / (self.Ks + s)
         dxdt = mu * x - u * x
         dsdt = u * (self.sR - s) - (mu * x / self.Y)
         return dxdt, dsdt
 
-    # def step(self, state, u, t, dt):
-    #     """
-    #     Standard Runge-Kutta 4th Order numerical integration execution block.
-    #     """
-    #     x, s = state[:, 0:1], state[:, 1:2]
-        
-    #     # k1
-    #     dx1, ds1 = self.dynamics(x, s, u)
-    #     # k2
-    #     dx2, ds2 = self.dynamics(x + 0.5*dt*dx1, s + 0.5*dt*ds1, u)
-    #     # k3
-    #     dx3, ds3 = self.dynamics(x + 0.5*dt*dx2, s + 0.5*dt*ds2, u)
-    #     # k4
-    #     dx4, ds4 = self.dynamics(x + dt*dx3, s + dt*ds3, u)
-        
-    #     x_next = x + (dt/6.0) * (dx1 + 2*dx2 + 2*dx3 + dx4)
-    #     s_next = s + (dt/6.0) * (ds1 + 2*ds2 + 2*ds3 + ds4)
-        
-    #     state_next = torch.cat([x_next, s_next], dim=1)
-    #     return state_next, self.get_y(state_next)
-
     def step(self, state, u, t, dt):
-        """
-        Dormand-Prince (RK45) numerical integration execution block.
+        """Perform dynamic state integration using the Dormand-Prince (RK45) scheme.
+
+        Advances the system state forward across time step ``dt`` using a 5th-order accurate 
+        embedded Runge-Kutta numerical solver step.
+
+        :param state: Current state tensor of shape ``(batch_size, 2)``.
+        :type state: torch.Tensor
+        :param u: Applied control input (dilution rate) tensor of shape ``(batch_size, 1)``.
+        :type u: torch.Tensor
+        :param t: Current simulation time.
+        :type t: float or torch.Tensor
+        :param dt: Time increment step size.
+        :type dt: float or torch.Tensor
+        :returns: Tuple ``(state_next, y_next)`` containing updated state tensor of shape 
+            ``(batch_size, 2)`` and observable output tensor of shape ``(batch_size, 1)``.
+        :rtype: tuple[torch.Tensor, torch.Tensor]
         """
         x, s = state[:, 0:1], state[:, 1:2]
         
@@ -112,6 +157,12 @@ class ChemostatPlant:
         return state_next, self.get_y(state_next)
 
     def get_plot_config(self):
+        """Retrieve visualization settings for plotting system time-series.
+
+        :returns: List of configuration dictionaries specifying column groupings, 
+            LaTeX formatted legends, figure titles, and axis labels.
+        :rtype: list[dict]
+        """
         return [
             {
                 "cols": ["x1", "x2"],
@@ -133,46 +184,15 @@ class ChemostatPlant:
             }
         ]
 
-    def parse_state(self, state):
-        return {
-            "biomass": state[0].item() if torch.is_tensor(state) else state[0],
-            "substrate": state[1].item() if torch.is_tensor(state) else state[1]
-        }
-
-
-class ChemostatWrapper(BasePlant):
-    def __init__(self, chemostat_plant_instance):
-        self.plant = chemostat_plant_instance
-
-    @property
-    def state_dim(self) -> int:
-        return 2  # [Biomass x, Substrate s]
-
-    @property
-    def control_dim(self) -> int:
-        return 1  # [Dilution rate u]
-
-    @property
-    def output_dim(self) -> int:
-        return 1  # [Growth rate y]
-
-    @property
-    def device(self):
-        return self.plant.device
-
-    def step(self, state, u, t, dt):
-        # Pass time step 't' through to the plant model
-        return self.plant.step(state, u, t=t, dt=dt)
-
-    
+# Default hyperparameter configuration 
 hyperparam_config_ChemostatPlant = {
     "plant" :{
         "mu-max": 0.5,      # Maximum growth rate [1/h]
         "Ks": 0.2,          # Half-saturation constant 
         "Y": 0.6,           # Yield coefficient
         "sR": 1.0,
-        "input_dim": 1,   # number of plant outputs
-        "output_dim": 1,   # number of plant control inputs
+        "input_dim": 1,     # number of plant outputs
+        "output_dim": 1,    # number of plant control inputs
         "u_1_hard_min": 0.0,
         "u_1_hard_max": 1,
 
@@ -209,7 +229,8 @@ hyperparam_config_ChemostatPlant = {
 
         "n_u": 2,
         "n_y": 2,
-        "lookback_offset": 2
+        "lookback_offset": 2,
+        "test_patience_epochs": 3,
 
         
     },
@@ -240,6 +261,8 @@ hyperparam_config_ChemostatPlant = {
 
         "u_1_lambd": 20,
         "u_1_p": 0.05,
+
+        
 
     },
     "mamba": {

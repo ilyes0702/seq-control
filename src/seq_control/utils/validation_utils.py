@@ -5,22 +5,17 @@ Validation Utility Functions
 This module contains utilities for 
 """
 
-
+# Import standard libraries
 from typing import Dict, Any, List
 import os
 import torch
 import numpy as np
 import pandas as pd
+
+# Import utility functions
 from seq_control.utils.plotting_utils import plot_stacked
 from seq_control.utils.saving_and_loading_utils import *
 from seq_control.utils.general_utils import *
-
-import os
-import numpy as np
-import pandas as pd
-import torch
-
-import os
 
 
 def _get_channel_labels(cfg, idx, default_prefix, total_dim):
@@ -205,6 +200,228 @@ def get_initial_state_from_config(hyperparam_config, batch_size=1, device="cpu")
             return x0_tensor.unsqueeze(0).repeat(batch_size, 1)
 
     return None
+
+
+
+import torch
+import numpy as np
+import matplotlib.pyplot as plt
+
+import numpy as np
+import torch
+
+def evaluate_and_plot_mpc(
+    mpc_controller,
+    plant,
+    dataset_dict,
+    Y_trajectories,
+    U_trajectories,
+    dt,
+    trace_idx=0,
+    plot_config=None,
+    dirname="mpc_plots"
+):
+    """
+    Evaluates MPC performance on a specific dataset trace and plots ground-truth 
+    vs MPC-predicted outputs, control actions, and internal plant states (TrophophasePlant).
+    """
+    device = getattr(mpc_controller, "device", "cuda" if torch.cuda.is_available() else "cpu")
+    if hasattr(mpc_controller, "model"):
+        mpc_controller.model.eval()
+
+    # --- 1. EXTRACT DIMENSIONS & PLANT HELPERS ---
+    # Determine dims from wrapper or plant instance safely
+    output_dim = getattr(plant, "output_dim", 1)
+    control_dim = getattr(plant, "control_dim", getattr(plant, "input_dim", 1))
+
+    # Convert trajectory inputs to NumPy arrays if they are PyTorch tensors
+    if isinstance(Y_trajectories, torch.Tensor):
+        Y_trajectories = Y_trajectories.detach().cpu().numpy()
+    if isinstance(U_trajectories, torch.Tensor):
+        U_trajectories = U_trajectories.detach().cpu().numpy()
+
+    # Y_trajectories shape: [Num_Traces, Seq_Len, output_dim]
+    # U_trajectories shape: [Num_Traces, Seq_Len, input_dim]
+    y_gt_full = Y_trajectories[trace_idx]  # Shape: [Seq_Len, output_dim]
+    u_gt_full = U_trajectories[trace_idx]  # Shape: [Seq_Len, control_dim]
+
+    total_len = len(y_gt_full)
+    n_y = mpc_controller.n_y
+    n_u = mpc_controller.n_u
+    start_idx = max(n_y, n_u)
+    eval_steps = total_len - start_idx - 1
+
+    # Save original horizon to restore after loop
+    H_orig = mpc_controller.H
+
+    # Time vector for horizontal axis [hours]
+    t_vec = np.arange(eval_steps) * dt
+
+    # Containers for logging MPC results
+    y_mpc = np.zeros((eval_steps, output_dim), dtype=np.float32)
+    u_mpc = np.zeros((eval_steps, control_dim), dtype=np.float32)
+    x_mpc = []
+
+    # Ground truth evaluation windows
+    y_gt = y_gt_full[start_idx + 1 : start_idx + 1 + eval_steps]
+    u_gt = u_gt_full[start_idx : start_idx + eval_steps]
+
+    # --- 2. INITIALIZE PLANT STATE ---
+    # TrophophasePlant uses get_initial_state instead of reset()
+    if hasattr(plant, "get_initial_state"):
+        current_state = plant.get_initial_state(batch_size=1, randomize=False)
+    elif hasattr(plant, "plant") and hasattr(plant.plant, "get_initial_state"):
+        current_state = plant.plant.get_initial_state(batch_size=1, randomize=False)
+    elif hasattr(plant, "reset"):
+        current_state = plant.reset(batch_size=1)
+    else:
+        raise AttributeError("Plant instance does not expose `get_initial_state` or `reset`.")
+
+    if not isinstance(current_state, torch.Tensor):
+        current_state = torch.tensor(current_state, dtype=torch.float32, device=device)
+    else:
+        current_state = current_state.to(device)
+
+    # Warm-up feature history vector with ground truth initial steps
+    v_history_raw = []
+    for k in range(start_idx):
+        y_hist = y_gt_full[k - n_y : k + 1].flatten()
+        u_hist = u_gt_full[k - n_u : k + 1].flatten()
+        v_k = np.concatenate([y_hist, u_hist])
+        v_history_raw.append(v_k)
+
+    u_prev_tensor = torch.tensor(
+        u_gt_full[start_idx - 1 : start_idx], dtype=torch.float32, device=device
+    )
+    if u_prev_tensor.ndim == 1:
+        u_prev_tensor = u_prev_tensor.unsqueeze(0)
+
+    # --- 3. CLOSED-LOOP MPC EXECUTION LOOP ---
+    print(f"🚀 Running MPC evaluation on trace {trace_idx} ({eval_steps} steps)...")
+
+    try:
+        for step_i in range(eval_steps):
+            k = start_idx + step_i
+            t_curr = step_i * dt
+
+            # A. Compute dynamic horizon near end of sequence
+            H_actual = min(H_orig, total_len - 1 - k)
+            mpc_controller.H = H_actual
+
+            # B. Extract reference target horizon: y_ref [1, H_actual, output_dim]
+            y_ref_horizon_np = y_gt_full[k + 1 : k + 1 + H_actual, :][np.newaxis, ...]
+            y_ref_horizon = torch.tensor(y_ref_horizon_np, dtype=torch.float32, device=device)
+
+            # C. Build history tensor: [1, seq_len, feature_dim]
+            hist_tensor = torch.tensor(
+                np.array(v_history_raw), dtype=torch.float32, device=device
+            ).unsqueeze(0)
+
+            # D. Solve MPC optimization problem
+            u_optimal_k = mpc_controller.solve(
+                history_frames=hist_tensor,
+                y_ref_horizon=y_ref_horizon,
+                u_prev=u_prev_tensor
+            )  # Output shape: [control_dim] or [1, control_dim]
+
+            # Standardize action shape to [1, control_dim]
+            if u_optimal_k.ndim == 1:
+                u_optimal_k_batch = u_optimal_k.unsqueeze(0)
+            else:
+                u_optimal_k_batch = u_optimal_k
+
+            u_k_np = u_optimal_k_batch.detach().cpu().numpy().flatten()
+            u_mpc[step_i] = u_k_np
+
+            # E. Step physical Trophophase plant dynamics (RK45 step with explicit time t)
+            next_state, y_k_tensor = plant.step(
+                state=current_state, 
+                u=u_optimal_k_batch, 
+                t=t_curr, 
+                dt=dt
+            )
+
+            # Log internal biomass (x1) and substrate (x2) mass states
+            x_mpc.append(current_state.detach().cpu().numpy().flatten())
+
+            # Log growth rate tracking output
+            y_k = y_k_tensor.detach().cpu().numpy().flatten()
+            y_mpc[step_i] = y_k
+
+            # F. Update plant state and dynamic feature history for next iteration
+            current_state = next_state
+
+            y_hist = np.concatenate([y_gt_full[k - n_y + 1 : k + 1], y_k[np.newaxis, :]], axis=0).flatten()
+            u_hist = np.concatenate([u_gt_full[k - n_u + 1 : k + 1], u_k_np[np.newaxis, :]], axis=0).flatten()
+            v_next = np.concatenate([y_hist, u_hist])
+            v_history_raw.append(v_next)
+
+            u_prev_tensor = u_optimal_k_batch
+
+    finally:
+        # Restore controller horizon state
+        mpc_controller.H = H_orig
+
+    x_mpc = np.array(x_mpc)
+
+    # --- 4. FORMAT SIGNALS AND LABELS FOR PLOTTING ---
+    signals = []
+    labels = []
+    ylabels = []
+
+    # Growth Rate Output y [1/h]
+    for dim in range(output_dim):
+        signals.append([y_gt[:, dim], y_mpc[:, dim]])
+        labels.append([f"Target Growth Rate $y_{{{dim+1}}}$", f"MPC Tracked $y_{{{dim+1}}}$"])
+        ylabels.append(r"Growth Rate $y$ [$\mathrm{h}^{-1}$]")
+
+    # Control Input u (Dilution Rate / Substrate Feed) [1/h]
+    for dim in range(control_dim):
+        signals.append([u_gt[:, dim], u_mpc[:, dim]])
+        labels.append([f"Dataset Action $u_{{{dim+1}}}$", f"MPC Action $u_{{{dim+1}}}$"])
+        ylabels.append(r"Feed/Dilution $u$ [$\mathrm{h}^{-1}$]")
+
+    # Internal Plant States: x1 (Biomass Mass [g]) and x2 (Substrate Mass [mg])
+    if len(x_mpc) > 0 and x_mpc.ndim > 1:
+        state_names = ["Biomass Mass $x_1$", "Substrate Mass $x_2$"]
+        state_units = [r"Mass $x_1$ [$\mathrm{g}$]", r"Mass $x_2$ [$\mathrm{mg}$]"]
+        num_states = x_mpc.shape[-1]
+
+        for s_dim in range(num_states):
+            s_name = state_names[s_dim] if s_dim < len(state_names) else f"State $x_{{{s_dim+1}}}$"
+            s_unit = state_units[s_dim] if s_dim < len(state_units) else f"State $x_{{{s_dim+1}}}$"
+            
+            signals.append([x_mpc[:, s_dim]])
+            labels.append([f"Plant {s_name}"])
+            ylabels.append(s_unit)
+
+    # Use plant configuration plot overrides if provided
+    if plot_config is None and hasattr(plant, "get_plot_config"):
+        plot_config = plant.get_plot_config()
+
+    # --- 5. CALL PLOT_STACKED ---
+    img = plot_stacked(
+        t=t_vec,
+        signals=signals,
+        plot_config=plot_config,
+        labels=labels,
+        title=f"Trophophase Plant MPC Tracking vs Ground Truth (Trace {trace_idx})",
+        xlabel=r"Time $t$ [$\mathrm{h}$]",
+        ylabel=ylabels,
+        filename=f"mpc_eval_trace_{trace_idx}.png",
+        dirname=dirname,
+        show=True
+    )
+
+    return img, {
+        "y_gt": y_gt, 
+        "y_mpc": y_mpc, 
+        "u_gt": u_gt, 
+        "u_mpc": u_mpc, 
+        "x_mpc": x_mpc, 
+        "t": t_vec
+    }
+
 
 def validate_controller_ext_ref(
     model,
