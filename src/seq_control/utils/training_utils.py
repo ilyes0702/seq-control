@@ -24,6 +24,7 @@ from seq_control.utils.general_utils import *
 from seq_control.utils.data_generation_utils import *
 
 #=== FUNCTION TO TRAIN SEQUENCE MODEL WITH K-FOLD CROSS VALIDATION ===#
+@track_resources
 def train_sequence_model(
     model,
     plant,
@@ -248,7 +249,8 @@ def train_sequence_model(
             if mean_test_loss < (best_test_loss - test_min_delta):
                 best_test_loss = mean_test_loss
                 patience_counter = 0
-                save_model(model, dirname=fold_dir, hyperparam_config=hyperparam_config, filename="best_fold_model")
+                save_model(model, 
+                           dirname=fold_dir, hyperparam_config=hyperparam_config, filename="best_fold_model")
             else:
                 patience_counter += 1
                 if patience_counter >= test_patience:
@@ -264,7 +266,7 @@ def train_sequence_model(
         plot_signals(t=np.array(fold_train_batch_indices),
                      signals=[np.array(fold_train_batch_loss)],
                      labels=[f"Fold {fold+1} Total Loss"],
-                     xlabel= r"$num_{seq}$",
+                     xlabel= r"$n_{seq}$",
                      ylabel= loss_name,
                      dirname=fold_dir,
                      filename="granular_training_loss",
@@ -412,7 +414,7 @@ def train_full_dataset(model,
     
     plant_cfg = hyperparam_config["plant"]
     
-    os.makedirs(dirname, exist_ok=True)
+    #os.makedirs(dirname, exist_ok=True)
     
     print("\n==========================================")
     print("🚀 RETRAINING FINAL MODEL ON FULL DATASET")
@@ -482,66 +484,33 @@ def train_full_dataset(model,
             print(f"🔥 [Full Retrain] Epoch {epoch+1}/{epochs} | Loss: {mean_epoch_loss:.6f}")
             
     # Save fully retrained model
-    save_model(model, dirname=dirname, hyperparam_config=hyperparam_config, filename="final_retrained_model")
+    save_model(model, 
+               dirname=dirname, 
+               hyperparam_config=hyperparam_config, filename="final_retrained_model")
     print(f"✅ Production Model & Scalers saved successfully in: {dirname}")
     return model
 
 #=== FUNCTION TO TRAIN AN ESN WITH K-FOLD CROSS-VALIDATION ===#
+@track_resources
 def train_controller_esn(
     model,
-    X_raw,          # Shape: [Total_Seqs, Seq_Len, input_dim * 2] (y_t and y_next)
-    Y_raw,          # Shape: [Total_Seqs, Seq_Len, output_dim]
+    X_raw,                # Shape: [Total_Seqs, Seq_Len, feature_dim]
+    Y_raw,                # Shape: [Total_Seqs, Seq_Len, num_control_inputs]
     hyperparam_config,
     dirname,
+    plant=None,           # Optional plant instance with get_plot_config()
+    save_test_plots=False
 ):
-    """Train an Echo State Network (ESN) inverse controller using K-Fold Cross-Validation.
-
-    This function performs analytical Ridge Regression fitting on an ESN (e.g., ReservoirPy model) 
-    across K-folds. In each fold, independent standard scalers are fitted on the training split, 
-    instant readout weights are computed, and validation performance is evaluated. Optional plant 
-    simulation rollouts and detailed tracking plots (for control signals and plant outputs) are 
-    generated for validation sequences.
-
-    :param model: The Echo State Network (ESN) reservoir model instance supporting ReservoirPy-style 
-        ``fit()``, ``forward()``, and parameter saving methods.
-    :type model: object
-    :param X_raw: Array of input trajectory sequences (concatenated current and next reference states/outputs) 
-        of shape ``(total_sequences, sequence_length, input_dim * 2)``.
-    :type X_raw: numpy.ndarray
-    :param Y_raw: Array of target control input sequences of shape 
-        ``(total_sequences, sequence_length, output_dim)``.
-    :type Y_raw: numpy.ndarray
-    :param hyperparam_config: Configuration dictionary containing training, data, and plant hyperparameters.
-        Must include keys ``'train'``, ``'training_data_cfg'``, and ``'plant'``.
-    :type hyperparam_config: dict
-    :param plant: Physical plant class or instance used for optional forward simulation rollout verification.
-    :type plant: type | object
-    :param dirname: Base directory path where fold-specific checkpoints, scalers, CSV logs, 
-        and validation plots will be stored.
-    :type dirname: str
-    :param run_simulation: Flag indicating whether to execute closed-loop plant dynamic simulations 
-        on all validation sequences for each fold, defaults to False.
-    :type run_simulation: bool, optional
-
-    :returns: Dictionary mapping fold indices (0 to K-1) to performance metrics history, 
-        including overall training/validation MSE and channel-specific MSE values.
-    :rtype: dict[int, dict[str, list[float]]]
-
-    .. note::
-        - Processing is maintained entirely in native NumPy arrays for optimal compatibility 
-          with ReservoirPy reservoir computing workflows.
-        - Training uses an exact analytical solution (Ridge Regression), completing in a single pass per fold without iterative epoch loops.
-        - When ``run_simulation=True``, full trajectory simulation logs and signal comparison CSV files 
-          are saved in fold-specific subdirectories.
-    """
+    """Train an Echo State Network (ESN) inverse controller using K-Fold Cross-Validation."""
+    
     # --- EXTRACT HYPERPARAMETERS ---
     dt = hyperparam_config["training_data_cfg"]["dt"]
     k_folds = hyperparam_config["train"]["k_folds"]
 
-    # --- MIMO-SPECIFIC CONFIG ---
-    esn_cfg = hyperparam_config["plant"]
-    input_dim = esn_cfg["input_dim"]    # Number of plant outputs
-    output_dim = esn_cfg["output_dim"]  # Number of control inputs
+    # --- DYNAMICALLY DERIVE ACTUAL ARRAY DIMENSIONS ---
+    num_control_inputs = Y_raw.shape[-1]              # Actual target control channels (u)
+    feature_dim = X_raw.shape[-1]                     # Total feature vector size
+    num_plant_outputs = hyperparam_config["plant"].get("input_dim", 1)  # Plant measurement channels (y)
 
     # --- SET UP K-FOLD INDICES ---
     total_sequences = X_raw.shape[0]
@@ -557,13 +526,11 @@ def train_controller_esn(
         print(f"🌀 STARTING FOLD {fold + 1} / {k_folds} (Dedicated ESN Analytical Fit)")
         print(f"==========================================")
 
-        # Clear internal memory states for the new fold
         model.load_state_dict(None)
 
         val_idx_arr = folds[fold]
         train_idx_arr = np.setdiff1d(all_indices, val_idx_arr)
 
-        # Isolate raw splits for this specific fold
         train_x_raw, val_x_raw = X_raw[train_idx_arr], X_raw[val_idx_arr]
         train_y_raw, val_y_raw = Y_raw[train_idx_arr], Y_raw[val_idx_arr]
 
@@ -581,7 +548,6 @@ def train_controller_esn(
         scaler_x.fit(train_x_flat)
         scaler_y.fit(train_y_flat)
 
-        # Keep everything native NumPy for ReservoirPy processing
         train_x = scaler_x.transform(train_x_flat).reshape(N_train, seq_len, dim_x)
         train_y = scaler_y.transform(train_y_flat).reshape(N_train, seq_len, dim_y)
 
@@ -593,112 +559,102 @@ def train_controller_esn(
         val_y = scaler_y.transform(val_y_flat).reshape(N_val, seq_len, dim_y)
 
         fold_dir = f"{dirname}/fold_{fold+1}"
-        os.makedirs(fold_dir, exist_ok=True)
+        
         save_to_json(hyperparam_config, fold_dir, f"hyperparam_config_fold_{fold+1}")
         save_scaler_object(scaler_x, dirname=fold_dir, filename="scaler_x")
         save_scaler_object(scaler_y, dirname=fold_dir, filename="scaler_y")
 
-        # --- ⚡ ANALYTICAL RIDGE REGRESSION TRAINING ---
+        # --- ANALYTICAL RIDGE REGRESSION TRAINING ---
         print(f"⚡ Executing instant weight computation via Ridge Regression...")
-
-        # Convert full array matrices into sequence lists for ReservoirPy compatibility
         X_train_list = [train_x[i] for i in range(N_train)]
         Y_train_list = [train_y[i] for i in range(N_train)]
 
-        # Train linear readout matrix instantly
         model.fit(X_train_list, Y_train_list)
 
-        # --- 📊 EVALUATION METRICS COLLECTION ---
-        # Generate predictions across train traces
+        # --- EVALUATION METRICS COLLECTION ---
         train_all_preds = np.array([model.forward(train_x[i]) for i in range(N_train)])
-
-        # Generate predictions across validation traces
         val_all_preds_arr = np.array([model.forward(val_x[i]) for i in range(N_val)])
         val_all_trues_arr = val_y
 
-        # Calculate Mean Squared Error performance evaluation bounds
         mean_train_loss = np.mean((train_all_preds - train_y) ** 2)
         mean_val_loss = np.mean((val_all_preds_arr - val_all_trues_arr) ** 2)
 
-        # Populate history dictionaries to match validation summary targets
         fold_histories[fold] = {
             "train_loss": [mean_train_loss],
             "val_loss": [mean_val_loss],
             "val_epochs": [1],
-            **{f"train_loss_ch{ch+1}": [np.mean((train_all_preds[..., ch] - train_y[..., ch]) ** 2)] for ch in range(output_dim)},
-            **{f"val_loss_ch{ch+1}": [np.mean((val_all_preds_arr[..., ch] - val_all_trues_arr[..., ch]) ** 2)] for ch in range(output_dim)}
+            **{f"train_loss_ch{ch+1}": [np.mean((train_all_preds[..., ch] - train_y[..., ch]) ** 2)] for ch in range(num_control_inputs)},
+            **{f"val_loss_ch{ch+1}": [np.mean((val_all_preds_arr[..., ch] - val_all_trues_arr[..., ch]) ** 2)] for ch in range(num_control_inputs)}
         }
      
         print(f"✨ [Fold {fold+1}] Performance Complete:")
-        model.save_parameters(f"{fold_dir}/parameters")
         print(f"   ↳ Total Train MSE: {mean_train_loss:.6f} | Total Val MSE: {mean_val_loss:.6f}")
 
-        # Persist trained parameters to disk
-        save_model_esn(model, dirname=fold_dir, hyperparam_config=hyperparam_config, filename="best_fold_model")
+        save_model_esn(model, 
+                       dirname=fold_dir, hyperparam_config=hyperparam_config, filename="best_fold_model")
 
-        # --- 📊 VALIDATION PLOTS: CONTROL INPUTS + OUTPUT SIGNALS (FIRST 5 SEQUENCES) ---
-        if N_val > 0:
-            print(f"📊 Generating validation plots for first 5 sequences of Fold {fold+1}...")
+        # --- 📈 PLOT ALL VALIDATION PREDICTIONS FOR THIS FOLD ---
+        if save_test_plots and N_val > 0:
+            print(f"📈 Plotting all validation predictions for Fold {fold + 1}...")
+            pred_curves_dir = f"{fold_dir}/validation_tracking_curves"
+            #os.makedirs(pred_curves_dir, exist_ok=True)
+            t_axis_test = np.arange(seq_len) * dt
 
-            t_axis_val = np.arange(seq_len) * dt
-            plots_dir = f"{fold_dir}/validation_control_and_output_plots"
-            os.makedirs(plots_dir, exist_ok=True)
+            # Extract dynamic metadata from plant if provided
+            u_cfg, t_cfg = None, None
+            if plant is not None and hasattr(plant, "get_plot_config"):
+                plot_cfg = plant.get_plot_config()
+                u_cfg = next((cfg for cfg in plot_cfg if "u" in cfg.get("cols", [])), None)
+                t_cfg = next((cfg for cfg in plot_cfg if "t" in cfg.get("cols", [])), None)
 
-            for seq_idx in range(min(5, N_val)):
-                # Unscaled predictions and ground truth for control inputs
-                seq_pred_unscaled = scaler_y.inverse_transform(val_all_preds_arr[seq_idx])
-                seq_true_unscaled = scaler_y.inverse_transform(val_all_trues_arr[seq_idx])
+            # Resolve dynamic x-axis label
+            xlabel_str = "Time [s]"
+            if t_cfg and "xlabel" in t_cfg:
+                xlabel_str = t_cfg["xlabel"][0] if isinstance(t_cfg["xlabel"], list) else t_cfg["xlabel"]
 
-                # Unscaled output signals (y_t and y_next) from X_raw
-                seq_x_unscaled = scaler_x.inverse_transform(val_x[seq_idx])
-                y_t = seq_x_unscaled[:, :input_dim]  # First half: y_t
-                y_next = seq_x_unscaled[:, input_dim:]  # Second half: y_next
+            # Plot prediction curves across all validation sequences
+            for seq_idx in range(N_val):
+                seq_pred_scaled = val_all_preds_arr[seq_idx]
+                seq_true_scaled = val_all_trues_arr[seq_idx]
 
-                # --- PLOT 1: CONTROL INPUTS (u) ---
-                for ch in range(output_dim):
-                    actual_u = seq_true_unscaled[:, ch]
-                    predicted_u = seq_pred_unscaled[:, ch]
+                seq_pred_unscaled = scaler_y.inverse_transform(seq_pred_scaled)
+                seq_true_unscaled = scaler_y.inverse_transform(seq_true_scaled)
+
+                for ch in range(num_control_inputs):
+                    # Extract y-axis and curve labels dynamically per control channel
+                    if u_cfg:
+                        if isinstance(u_cfg.get("ylabel"), list):
+                            ylabel_str = u_cfg["ylabel"][ch] if ch < len(u_cfg["ylabel"]) else f"Control Unit u_{ch+1}"
+                        else:
+                            ylabel_str = u_cfg.get("ylabel", f"Control Unit u_{ch+1}")
+
+                        if "labels" in u_cfg and isinstance(u_cfg["labels"], list) and ch < len(u_cfg["labels"]):
+                            base_label = u_cfg["labels"][ch]
+                        else:
+                            base_label = f"u_{ch+1}"
+                    else:
+                        ylabel_str = f"Control Unit u_{ch+1}"
+                        base_label = f"u_{ch+1}"
 
                     plot_signals(
-                        t=t_axis_val,
-                        signals=[actual_u, predicted_u],
-                        labels=[
-                            rf"Actual Control ($u_{ch+1}$)",
-                            rf"Predicted Control ($\hat{{u}}_{ch+1}$)"
-                        ],
-                        title=f"Fold {fold+1} - Seq {seq_idx+1}: Control Input (Channel {ch+1})",
-                        xlabel="Time [s]",
-                        ylabel="Control Input",
-                        figsize=(7, 5),
-                        filename=f"control_tracking_fold_{fold+1}_seq_{seq_idx+1}_ch{ch+1}",
-                        dirname=plots_dir
+                        t=t_axis_test,
+                        signals=[seq_true_unscaled[:, ch], seq_pred_unscaled[:, ch]],
+                        labels=[f"True {base_label}", f"Predicted {base_label}"],
+                        xlabel=xlabel_str,
+                        ylabel=ylabel_str,
+                        dirname=pred_curves_dir,
+                        filename=f"validation_prediction_seq{seq_idx+1}_u{ch+1}",
+                        asp=0.3
                     )
 
-                # --- PLOT 2: OUTPUT SIGNALS (y) ---
-                for out_ch in range(input_dim):
-                    plot_signals(
-                        t=t_axis_val,
-                        signals=[y_t[:, out_ch], y_next[:, out_ch]],
-                        labels=[
-                            rf"Original Output ($y_{out_ch+1}$)",
-                            rf"Next Output ($y_{out_ch+1,next}$)"
-                        ],
-                        title=f"Fold {fold+1} - Seq {seq_idx+1}: Output Signal (Channel {out_ch+1})",
-                        xlabel="Time [s]",
-                        ylabel="Output Signal",
-                        figsize=(7, 5),
-                        filename=f"output_tracking_fold_{fold+1}_seq_{seq_idx+1}_ch{out_ch+1}",
-                        dirname=plots_dir
-                    )
-
-            print(f"✅ Validation plots (control + output) generated for first 5 sequences of Fold {fold+1}.")
+            print(f"✅ Saved all validation prediction plots to '{pred_curves_dir}'.")
 
     # --- FINAL SUMMARY RECORD GENERATION ---
     print("\n💾 Packing overarching metadata curves...")
     summary_records = []
     for f in fold_histories:
         record = {"fold": f+1, "best_recorded_total_val_loss": fold_histories[f]["val_loss"][0]}
-        for ch in range(output_dim):
+        for ch in range(num_control_inputs):
             record[f"best_val_loss_u{ch+1}"] = fold_histories[f][f"val_loss_ch{ch+1}"][0]
         summary_records.append(record)
 

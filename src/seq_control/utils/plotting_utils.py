@@ -573,6 +573,243 @@ def plot_param_heatmap(
 
     return image
 
+def _get_channel_labels(cfg, idx, default_prefix, total_dim):
+    """
+    Extracts (ylabel, legend_base_label) for channel index `idx` from a plot_config section.
+    """
+    if not cfg:
+        return f"${default_prefix}_{{{idx+1}}}$", f"${default_prefix}_{{{idx+1}}}$"
+
+    # 1. Extract y-axis title
+    ylabel_val = cfg.get("ylabel", None)
+    if isinstance(ylabel_val, list) and idx < len(ylabel_val):
+        y_label = ylabel_val[idx]
+    elif isinstance(ylabel_val, str):
+        y_label = ylabel_val if total_dim == 1 else f"{ylabel_val}_{{{idx+1}}}"
+    else:
+        y_label = f"${default_prefix}_{{{idx+1}}}$"
+
+    # 2. Extract legend label base
+    labels_val = cfg.get("labels", None)
+    if isinstance(labels_val, list) and idx < len(labels_val):
+        base_label = labels_val[idx]
+    elif isinstance(labels_val, str):
+        base_label = labels_val
+    else:
+        base_label = y_label
+
+    return y_label, base_label
+
+def plot_closed_loop_trajectories(
+    t,
+    u_ref,
+    u_applied,
+    y_ref,
+    y_achieved,
+    states_achieved,
+    states_ref,
+    plant,
+    dirname="./plots",
+    show=False
+):
+    """
+    Renders a single stacked trajectory comparison plot combining Inputs (u), 
+    Outputs (y), and States (x) for ALL sequences in the dataset using `plot_stacked`.
+    Dynamically uses axis labels and units from `plant.get_plot_config()`.
+    """
+    num_sequences = u_ref.shape[0]
+    control_dim = u_ref.shape[-1]
+    output_dim = y_ref.shape[-1]
+    state_dim = states_achieved.shape[-1]
+
+    # --- Extract Plant Plot Configuration ---
+    plot_config = plant.get_plot_config() if (plant is not None and hasattr(plant, "get_plot_config")) else None
+
+    xlabel = "Time [s]"
+    u_cfg, y_cfg, x_cfg = {}, {}, {}
+
+    if plot_config:
+        for item in plot_config:
+            cols = item.get("cols", [])
+            if any(c == "t" for c in cols):
+                xl = item.get("xlabel", item.get("labels", ["Time [s]"]))
+                xlabel = xl[0] if isinstance(xl, list) else xl
+            elif any(c == "u" or c.startswith("u") for c in cols):
+                u_cfg = item
+            elif any(c == "y" or c.startswith("y") for c in cols):
+                y_cfg = item
+            elif any(c == "x" or c.startswith("x") for c in cols):
+                x_cfg = item
+
+    # --- Render Plots for Each Sequence ---
+    for trace_idx in range(num_sequences):
+        trace_tag = f"trace_{trace_idx + 1}"
+
+        signals = []
+        labels = []
+        ylabels = []
+
+        # ----------------------------------------------------
+        # 1. CONTROL INPUTS (u)
+        # ----------------------------------------------------
+        for ch in range(control_dim):
+            y_title, base_lbl = _get_channel_labels(u_cfg, ch, "u", control_dim)
+            signals.append([u_ref[trace_idx, :, ch], u_applied[trace_idx, :, ch]])
+            labels.append([f"Reference", f"Model prediction"])
+            ylabels.append(y_title)
+
+        # ----------------------------------------------------
+        # 2. PLANT OUTPUTS (y)
+        # ----------------------------------------------------
+        for ch in range(output_dim):
+            y_title, base_lbl = _get_channel_labels(y_cfg, ch, "y", output_dim)
+            signals.append([y_ref[trace_idx, :, ch], y_achieved[trace_idx, :, ch]])
+            labels.append([f"{base_lbl} (ref)", f"{base_lbl} (achieved)"])
+            ylabels.append(y_title)
+
+        # ----------------------------------------------------
+        # 3. SYSTEM STATES (x)
+        # ----------------------------------------------------
+        for ch in range(state_dim):
+            y_title, base_lbl = _get_channel_labels(x_cfg, ch, "x", state_dim)
+            if states_ref is not None:
+                signals.append([states_ref[trace_idx, :, ch], states_achieved[trace_idx, :, ch]])
+                labels.append([f"{base_lbl} (ref)", f"{base_lbl} (achieved)"])
+            else:
+                signals.append([states_achieved[trace_idx, :, ch]])
+                labels.append([f"{base_lbl} (achieved)"])
+            
+            ylabels.append(y_title)
+
+        # ----------------------------------------------------
+        # RENDER COMBINED STACKED PLOT
+        # ----------------------------------------------------
+        plot_stacked(
+            t=t,
+            signals=signals,
+            labels=labels,
+            ylabel=ylabels,
+            xlabel=xlabel,
+            filename=f"closed_loop_trajectories_{trace_tag}.png",
+            dirname=dirname,
+            show=show
+        )
+
+
+def plot_closed_loop_trajectories_multi(
+    t,
+    u_ref,
+    u_applied_dict,
+    y_ref,
+    y_achieved_dict,
+    states_achieved_dict,
+    states_ref=None,
+    plant=None,
+    dirname="validation_plots",
+    show=False
+):
+    """
+    Formats multi-model signals and metadata, then delegates figure creation to `plot_stacked`.
+    """
+    os.makedirs(dirname, exist_ok=True)
+    N = y_ref.shape[0]
+    output_dim = y_ref.shape[-1]
+    control_dim = u_ref.shape[-1]
+    
+    first_model = list(states_achieved_dict.keys())[0]
+    state_dim = states_achieved_dict[first_model].shape[-1]
+    has_states_ref = states_ref is not None
+    model_names = list(u_applied_dict.keys())
+
+    # --- EXTRACT METADATA FROM PLANT IF AVAILABLE ---
+    xlabel_str = "Time [s]"
+    y_ylabels_meta, u_ylabels_meta, x_ylabels_meta = [], [], []
+
+    if plant is not None and hasattr(plant, "get_plot_config"):
+        plot_cfg = plant.get_plot_config()
+        
+        # Extract xlabel
+        t_cfg = next((c for c in plot_cfg if "xlabel" in c or "t" in c.get("cols", [])), None)
+        if t_cfg and "xlabel" in t_cfg:
+            xl = t_cfg["xlabel"]
+            xlabel_str = xl[0] if isinstance(xl, (list, tuple)) else xl
+
+        # Extract ylabels
+        y_cfg = next((c for c in plot_cfg if "y" in c.get("cols", [])), None)
+        u_cfg = next((c for c in plot_cfg if "u" in c.get("cols", [])), None)
+        x_cfg = next((c for c in plot_cfg if "x" in c.get("cols", []) or "states" in c.get("cols", [])), None)
+
+        if y_cfg and "ylabel" in y_cfg:
+            yl = y_cfg["ylabel"]
+            y_ylabels_meta = yl if isinstance(yl, list) else [yl] * output_dim
+        if u_cfg and "ylabel" in u_cfg:
+            yl = u_cfg["ylabel"]
+            u_ylabels_meta = yl if isinstance(yl, list) else [yl] * control_dim
+        if x_cfg and "ylabel" in x_cfg:
+            yl = x_cfg["ylabel"]
+            x_ylabels_meta = yl if isinstance(yl, list) else [yl] * state_dim
+
+    # --- BUILD Y-AXIS LABELS LIST FOR ALL SUBPLOT ROWS ---
+    ylabels_list = []
+    
+    # Output y-labels
+    for ch in range(output_dim):
+        ylabels_list.append(y_ylabels_meta[ch] if ch < len(y_ylabels_meta) else f"Output $y_{{{ch+1}}}$")
+
+    # Control u-labels
+    for ch in range(control_dim):
+        ylabels_list.append(u_ylabels_meta[ch] if ch < len(u_ylabels_meta) else f"Control $u_{{{ch+1}}}$")
+
+    # State x-labels
+    for ch in range(state_dim):
+        ylabels_list.append(x_ylabels_meta[ch] if ch < len(x_ylabels_meta) else f"State $x_{{{ch+1}}}$")
+
+    # --- RENDER STACKED PLOT FOR EACH SEQUENCE ---
+    for seq_idx in range(N):
+        signals_list = []
+        labels_list = []
+
+        # 1. Output Subplots (y)
+        for ch in range(output_dim):
+            row_signals = [y_ref[seq_idx, :, ch]] + [y_achieved_dict[m][seq_idx, :, ch] for m in model_names]
+            row_labels = ["Ref"] + [f"{m}" for m in model_names]
+            signals_list.append(row_signals)
+            labels_list.append(row_labels)
+
+        # 2. Control Subplots (u)
+        for ch in range(control_dim):
+            row_signals = [u_ref[seq_idx, :, ch]] + [u_applied_dict[m][seq_idx, :, ch] for m in model_names]
+            row_labels = ["Ref"] + [f"{m}" for m in model_names]
+            signals_list.append(row_signals)
+            labels_list.append(row_labels)
+
+        # 3. State Subplots (x)
+        for ch in range(state_dim):
+            row_signals = []
+            row_labels = []
+            if has_states_ref:
+                row_signals.append(states_ref[seq_idx, :, ch])
+                row_labels.append("Ref")
+            for m in model_names:
+                row_signals.append(states_achieved_dict[m][seq_idx, :, ch])
+                row_labels.append(f"{m}")
+            signals_list.append(row_signals)
+            labels_list.append(row_labels)
+
+        # Execute plot_stacked
+        plot_stacked(
+            t=t,
+            signals=signals_list,
+            labels=labels_list,
+            xlabel=xlabel_str,
+            ylabel=ylabels_list,
+            dirname=dirname,
+            filename=f"multi_model_trajectory_seq_{seq_idx + 1}",
+            show=show,
+            asp=0.33,
+            hspace=0.08
+        )
+
 
 def plot_stacked(
     t,

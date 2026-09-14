@@ -6,9 +6,6 @@ class ESNInverseController:
         """
         MIMO Echo State Network Inverse Controller using ReservoirPy.
         """
-        # Read MIMO dimensions from configuration
-        self.input_dim = hyperparam_config["plant"]["input_dim"]     # e.g., number of plant outputs
-        self.output_dim = hyperparam_config["plant"]["output_dim"]   # e.g., number of plant control inputs
         
         # Hyperparameters specific to ESN
         self.units = hyperparam_config["esn"]["units"]  # Number of reservoir units
@@ -17,8 +14,7 @@ class ESNInverseController:
         self.ridge = hyperparam_config["esn"]["ridge"]    # Regularization coefficient
         
         # Initialize ReservoirPy Nodes
-        # The input dimension to the reservoir will automatically adapt to (input_dim * 2) 
-        # when data is first passed or during connection.
+        # The input dimension to the reservoir will automatically adapt when data is first passed or during connection.
         self.reservoir = Reservoir(units=self.units, lr=self.lr, sr=self.sr)
         self.readout = Ridge(ridge=self.ridge)
         

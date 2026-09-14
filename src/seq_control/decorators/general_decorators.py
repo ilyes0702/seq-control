@@ -65,27 +65,28 @@ def track_resources(func):
         
         # 4. Extract Metrics
         total_sec = end_time - start_time
-        gpu_min = total_sec / 60
+        gpu_sec = total_sec 
         peak_bytes = torch.cuda.max_memory_allocated()
-        peak_gb = peak_bytes / (1024**3) # Convert bytes to Gigabytes
+        peak_mb = peak_bytes / (1024**2) # Convert bytes to Megabytes
         
         print("\n" + "🚀" + " ="*20)
         print(f"RESOURCE REPORT: {func.__name__}")
-        print(f"⏱️  Time Used:  {gpu_min:.4f} GPU-minutes")
-        print(f"💾 Peak VRAM:  {peak_gb:.2f} GB")
+        print(f"⏱️  Time Used:  {gpu_sec:.2f} GPU-seconds")
+        print(f"💾 Peak VRAM:  {peak_mb:.2f} GB")
         print(" ="*20 + "\n")
         
         # Return results + a dictionary of metrics for easy logging
         metrics = {
-            "gpu_minutes": gpu_min,
-            "peak_vram_gb": peak_gb
+            "gpu_seconds": gpu_sec,
+            "peak_vram_mb": peak_mb
         }
 
-        
         resource_df = pd.DataFrame([metrics])
-        csv_filename = kwargs.get("resource_filename", f"{func.__name__}_resource_stats")
-        csv_dirname = kwargs.get("resource_dirname", "resource_stats")
-        save_df_to_csv(resource_df, filename=csv_filename, dirname=csv_dirname)
+        csv_filename = kwargs.get("filename")
+        csv_dirname = kwargs.get("dirname")
+        save_df_to_csv(resource_df, 
+                       filename=csv_filename, 
+                       dirname=csv_dirname)
 
         return result, metrics
         

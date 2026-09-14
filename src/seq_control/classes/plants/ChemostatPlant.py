@@ -167,20 +167,17 @@ class ChemostatPlant:
             {
                 "cols": ["x1", "x2"],
                 "labels": [r"$x_1$ [$\mathrm{g}\,\mathrm{L}^{-1}$]", r"$x_2$ [$\mathrm{g}\,\mathrm{L}^{-1}$]"],
-                "title": "Chemostat State Evolution",
-                "ylabel": "Concentration [g/L]"
+                "ylabel": [r"$x_1$ [$\mathrm{g}\,\mathrm{L}^{-1}$]", r"$x_2$ [$\mathrm{g}\,\mathrm{L}^{-1}$]"]
             },
             {
                 "cols": ["y"],
                 "labels": [r"$y$ [$\mathrm{h}^{-1}$]"],
-                "title": "Growth Rate Inverse Learning",
-                "ylabel": "Growth Rate [1/h]"
+                "ylabel": [r"$y$ [$\mathrm{h}^{-1}$]"]
             },
             {
                 "cols": ["u"],
                 "labels": [r"$u$ [$\mathrm{L}\,\mathrm{h}^{-1}$]"],
-                "title": "Control Input (D)",
-                "ylabel": "Dilution Rate [1/h]"
+                "ylabel": [r"$u$ [$\mathrm{L}\,\mathrm{h}^{-1}$]"]
             }
         ]
 
@@ -261,9 +258,6 @@ hyperparam_config_ChemostatPlant = {
 
         "u_1_lambd": 20,
         "u_1_p": 0.05,
-
-        
-
     },
     "mamba": {
         "d_state": 1,
@@ -287,6 +281,18 @@ hyperparam_config_ChemostatPlant = {
         "lstm.num_layers": {"type": "int", "low": 1, "high": 4},
         "lstm.dropout": {"type": "float", "low": 0.0, "high": 0.5},
     },
+    "transformer": {
+                    "nhead" : 2,
+                    "num_layers" : 6,
+                    "dim_feedforward" : 256,
+                    "max_seq_len" : 2000
+                },
+                    
+    "transformer_param_space":  {
+        "transformer.nhead":           {"type": "categorical", "choices": [1, 2, 3]}, # Must divide d_model
+        "transformer.num_layers":      {"type": "int", "low": 1, "high": 4},
+        "transformer.dim_feedforward": {"type": "categorical", "choices": [64, 128, 256]},
+        },
     "esn": {
         "units": 200,   
         "lr": 0.5,

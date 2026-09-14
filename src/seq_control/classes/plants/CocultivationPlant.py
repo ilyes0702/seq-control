@@ -244,20 +244,44 @@ class CoCultivationPlant:
         return [
             {
                 "cols": ["x1", "x2", "s", "a1", "a2"],
-                "labels": [r"$x_1 / \mathrm{g}\,\mathrm{L}^{-1}$",r"$x_2 / \mathrm{g}\,\mathrm{L}^{-1}$",r"$x_3 / \mathrm{g}\,\mathrm{L}^{-1}$",r"$x_4 / \mathrm{g}\,\mathrm{L}^{-1}$",r"$x_5 / \mathrm{g}\,\mathrm{L}^{-1}$"],
-                "ylabel": [r"$x_1 / \mathrm{g}\,\mathrm{L}^{-1}$",r"$x_2 / \mathrm{g}\,\mathrm{L}^{-1}$",r"$x_3 / \mathrm{g}\,\mathrm{L}^{-1}$",r"$x_4 / \mathrm{g}\,\mathrm{L}^{-1}$",r"$x_5 / \mathrm{g}\,\mathrm{L}^{-1}$"]
+                "labels": [
+                    r"$x_1 \; [\mathrm{g}\,\mathrm{L}^{-1}]$",
+                    r"$x_2 \; [\mathrm{g}\,\mathrm{L}^{-1}]$",
+                    r"$x_3 \; [\mathrm{g}\,\mathrm{L}^{-1}]$",
+                    r"$x_4 \; [\mathrm{g}\,\mathrm{L}^{-1}]$",
+                    r"$x_5 \; [\mathrm{g}\,\mathrm{L}^{-1}]$"
+                ],
+                "ylabel": [
+                    r"$x_1 \; [\mathrm{g}\,\mathrm{L}^{-1}]$",
+                    r"$x_2 \; [\mathrm{g}\,\mathrm{L}^{-1}]$",
+                    r"$x_3 \; [\mathrm{g}\,\mathrm{L}^{-1}]$",
+                    r"$x_4 \; [\mathrm{g}\,\mathrm{L}^{-1}]$",
+                    r"$x_5 \; [\mathrm{g}\,\mathrm{L}^{-1}]$"
+                ]
             },
             {
                 "cols": ["y1", "y2"],
-                "labels": [r"$y_1 / \mathrm{g}\,\mathrm{L}^{-1}$",r"$y_2 / \mathrm{g}\,\mathrm{L}^{-1}$"],
-                "ylabel": [r"$y_1 / \mathrm{g}\,\mathrm{L}^{-1}$",r"$y_2 / \mathrm{g}\,\mathrm{L}^{-1}$"]
+                "labels": [
+                    r"$y_1 \; [\mathrm{g}\,\mathrm{L}^{-1}]$",
+                    r"$y_2 \; [\mathrm{g}\,\mathrm{L}^{-1}]$"
+                ],
+                "ylabel": [
+                    r"$y_1 \; [\mathrm{g}\,\mathrm{L}^{-1}]$",
+                    r"$y_2 \; [\mathrm{g}\,\mathrm{L}^{-1}]$"
+                ]
             },
             {
                 "cols": ["u1", "u2"],
-                "labels": [r"$u_1 / \mathrm{W}\,\mathrm{m}^{-2}$", r"$u_2 / \mathrm{W}\,\mathrm{m}^{-2}$"],
-                "ylabel": [r"$u_1 / \mathrm{W}\,\mathrm{m}^{-2}$", r"$u_2 / \mathrm{W}\,\mathrm{m}^{-2}$"]
+                "labels": [
+                    r"$u_1 \; [\mathrm{W}\,\mathrm{m}^{-2}]$",
+                    r"$u_2 \; [\mathrm{W}\,\mathrm{m}^{-2}]$"
+                ],
+                "ylabel": [
+                    r"$u_1 \; [\mathrm{W}\,\mathrm{m}^{-2}]$",
+                    r"$u_2 \; [\mathrm{W}\,\mathrm{m}^{-2}]$"
+                ]
             }
-        ]    
+        ]
 
 # Default hyperparameter configuration
 hyperparam_config_CoCultivationPlant = {
@@ -378,6 +402,35 @@ hyperparam_config_CoCultivationPlant = {
             "expand": 1,
             "d_conv" : 1
         },
+    "lstm": {
+            "hidden_size": 64,
+            "num_layers": 2,
+            "dropout": 0.1,
+        },
+    "lstm_param_space" : {
+        "lstm.hidden_size": {"type": "int", "low": 16, "high": 128},
+        "lstm.num_layers": {"type": "int", "low": 1, "high": 4},
+        "lstm.dropout": {"type": "float", "low": 0.0, "high": 0.5},
+    },
+
+    "transformer": {
+                    "nhead" : 2,
+                    "num_layers" : 6,
+                    "dim_feedforward" : 256,
+                    "max_seq_len" : 2000
+                },
+                    
+    "transformer_param_space":  {
+        "transformer.nhead":           {"type": "categorical", "choices": [1, 2, 3]}, # Must divide d_model
+        "transformer.num_layers":      {"type": "int", "low": 1, "high": 4},
+        "transformer.dim_feedforward": {"type": "categorical", "choices": [64, 128, 256]},
+        },
+    "esn": {
+                "units": 200,   
+                "lr": 0.5,
+                "sr": 0.9,
+                "ridge": 1e-7,    # Regularization coefficient  
+            },
     "simulate": {
         "batch_size": 10,
         "seq_len": 2001,

@@ -218,46 +218,46 @@ class IndForProteinProductionPlant:
             {
                 "cols": ["x1", "x2", "x3", "x4", "x5", "x6", "x7"],
                 "labels": [
-                    r"$x_1 \; / \; \mathrm{L}$", 
-                    r"$x_2 \; / \; \mathrm{g \cdot L^{-1}}$",
-                    r"$x_3 \; / \; \mathrm{g \cdot L^{-1}}$",
-                    r"$x_4 \; / \; \mathrm{g \cdot L^{-1}}$",
-                    r"$x_5 \; / \; \mathrm{g \cdot L^{-1}}$",
-                    r"$x_6 \; / \; \mathrm{dimensionless}$",
-                    r"$x_7 \; / \; \mathrm{dimensionless}$"
+                    r"$x_1 \; [\mathrm{L}]$", 
+                    r"$x_2 \; [\mathrm{g \cdot L^{-1}}]$",
+                    r"$x_3 \; [\mathrm{g \cdot L^{-1}}]$",
+                    r"$x_4 \; [\mathrm{g \cdot L^{-1}}]$",
+                    r"$x_5 \; [\mathrm{g \cdot L^{-1}}]$",
+                    r"$x_6 \; [\mathrm{dimensionless}]$",
+                    r"$x_7 \; [\mathrm{dimensionless}]$"
                 ],
                 "ylabel": [
-                    r"$x_1 \; / \; \mathrm{L}$", 
-                    r"$x_2 \; / \; \mathrm{g \cdot L^{-1}}$",
-                    r"$x_3 \; / \; \mathrm{g \cdot L^{-1}}$",
-                    r"$x_4 \; / \; \mathrm{g \cdot L^{-1}}$",
-                    r"$x_5 \; / \; \mathrm{g \cdot L^{-1}}$",
-                    r"$x_6 \; / \; \mathrm{dimensionless}$",
-                    r"$x_7 \; / \; \mathrm{dimensionless}$"
+                    r"$x_1 \; [\mathrm{L}]$", 
+                    r"$x_2 \; [\mathrm{g \cdot L^{-1}}]$",
+                    r"$x_3 \; [\mathrm{g \cdot L^{-1}}]$",
+                    r"$x_4 \; [\mathrm{g \cdot L^{-1}}]$",
+                    r"$x_5 \; [\mathrm{g \cdot L^{-1}}]$",
+                    r"$x_6 \; [\mathrm{-}]$",
+                    r"$x_7 \; [\mathrm{-}]$"
                 ]
             },
             {
                 "cols": ["u1", "u2"],
                 "labels": [
-                    r"$u_1 \; / \; \mathrm{L \cdot h^{-1}}$", 
-                    r"$u_2 \; / \; \mathrm{L \cdot h^{-1}}$"
+                    r"$u_1 \; [\mathrm{L \cdot h^{-1}}]$", 
+                    r"$u_2 \; [\mathrm{L \cdot h^{-1}}]$"
                 ],
                 "ylabel": [
-                    r"$u_1 \; / \; \mathrm{L \cdot h^{-1}}$", 
-                    r"$u_2 \; / \; \mathrm{L \cdot h^{-1}}$"
+                    r"$u_1 \; [\mathrm{L \cdot h^{-1}}]$", 
+                    r"$u_2 \; [\mathrm{L \cdot h^{-1}}]$"
                 ]
             },
             {
                 "cols": ["y1", "y2", "y3"],
                 "labels": [
-                    r"$y_1 \; / \; \mathrm{L}$", 
-                    r"$y_2 \; / \; \mathrm{g \cdot L^{-1}}$", 
-                    r"$y_3 \; / \; \mathrm{g \cdot L^{-1}}$"
+                    r"$y_1 \; [\mathrm{L}]$", 
+                    r"$y_2 \; [\mathrm{g \cdot L^{-1}}]$", 
+                    r"$y_3 \; [\mathrm{g \cdot L^{-1}}]$"
                 ],
                 "ylabel": [
-                    r"$y_1 \; / \; \mathrm{L}$", 
-                    r"$y_2 \; / \; \mathrm{g \cdot L^{-1}}$", 
-                    r"$y_3 \; / \; \mathrm{g \cdot L^{-1}}$"
+                    r"$y_1 \; [\mathrm{L}]$", 
+                    r"$y_2 \; [\mathrm{g \cdot L^{-1}}]$", 
+                    r"$y_3 \; [\mathrm{g \cdot L^{-1}}]$"
                 ]
             }
         ]
@@ -266,29 +266,29 @@ class IndForProteinProductionPlant:
 hyperparam_config_IndForProteinProductionPlant = {
     "plant": {
         # --- Kinematic & Yield Parameters (Lee & Ramirez Model) ---
-        "mu_max": 0.407,       # Maximum specific growth rate [1/h]
-        "K_CI": 0.22,         # Inducer inhibition/shock structural constant [g/L]
-        "k_22": 0.09,          # Deactivation rate coefficient for protein shock [1/h]
-        "K_s": 14814.8,           # Substrate inhibition constant multiplier [g/L]
+        "mu_max": 0.407,           # Maximum specific growth rate [1/h]
+        "K_CI": 0.22,              # Inducer inhibition/shock structural constant [g/L]
+        "k_22": 0.09,              # Deactivation rate coefficient for protein shock [1/h]
+        "K_s": 14814.8,            # Substrate inhibition constant multiplier [g/L]
         "f_I_0": 0.0005,
         "C_n_f": 100,
         "Y": 0.51,
 
-        "K_CN": 0.108,          # Nitrogen/Nutrient saturation constant [g/L]
-        "k_11": 0.09,          # Deactivation rate coefficient for growth shock [1/h]
-        "K_IX": 0.034,          # Cell density impact factor on deactivation [g/L]
+        "K_CN": 0.108,             # Nitrogen/Nutrient saturation constant [g/L]
+        "k_11": 0.09,              # Deactivation rate coefficient for growth shock [1/h]
+        "K_IX": 0.034,             # Cell density impact factor on deactivation [g/L]
         
-        "f_max": 0.095,     # Max specific foreign protein production rate [1/h]
-        "K_IX": 0.034,     # Inducer activation affinity constant [g/L]   
+        "f_max": 0.095,            # Max specific foreign protein production rate [1/h]
+        "K_IX": 0.034,             # Inducer activation affinity constant [g/L]   
         
         "f_max": 0.095,
         "K_I": 0.022,
         "C_i_f": 4,        
         
         
-        #"N": 100.0,           # Nutrient concentration in glucose feed stream [g/L]
-        #"I": 4.0,             # Inducer concentration in activator feed stream [g/L]
-        #"Y": 0.5,             # Biomass growth yield coefficient [g dry cells / g nutrient]
+        #"N": 100.0,               # Nutrient concentration in glucose feed stream [g/L]
+        #"I": 4.0,                 # Inducer concentration in activator feed stream [g/L]
+        #"Y": 0.5,                 # Biomass growth yield coefficient [g dry cells / g nutrient]
 
         # --- Actuator Flow Rate Bounds (2 Inputs: u_1 = Glucose Feed, u_2 = Inducer Feed) ---
         "u_1_hard_min": 0.0,       # Glucose pump fully off [L/h]
@@ -303,7 +303,7 @@ hyperparam_config_IndForProteinProductionPlant = {
 
         # --- State Trajectory Bounds (7 Dimensions) ---
         "x_1_hard_min": 0.0,       # Minimum reactor heel volume to cover sensors [L]
-        "x_1_hard_max": None,       # Total structural capacity of the tank vessel [L]
+        "x_1_hard_max": None,      # Total structural capacity of the tank vessel [L]
         "x_2_hard_min": 0.0,       # Biomass density floor [g/L]
         "x_3_hard_min": 0.0,       # Nutrient limitation floor [g/L]
         "x_4_hard_min": 0.0,       # Protein concentration floor [g/L]
@@ -334,7 +334,7 @@ hyperparam_config_IndForProteinProductionPlant = {
     "train": {
         "k_folds": 5,              # Cross-validation splits
         "epochs": 150,             # Total training iterations
-        "batch_size": 1000,         # Number of batch elements
+        "batch_size": 1000,        # Number of batch elements
         "lr": 1e-3,                # Base optimization learning rate
         "device": "cuda",          # Core processing target execution context
         "delay_steps": 5,          # Latency control parameter markers
@@ -401,6 +401,37 @@ hyperparam_config_IndForProteinProductionPlant = {
         "expand": 1,
         "d_conv" : 1
     },
+    "lstm": {
+            "hidden_size": 64,
+            "num_layers": 2,
+            "dropout": 0.1,
+        },
+    "lstm_param_space" : {
+        "lstm.hidden_size": {"type": "int", "low": 16, "high": 128},
+        "lstm.num_layers": {"type": "int", "low": 1, "high": 4},
+        "lstm.dropout": {"type": "float", "low": 0.0, "high": 0.5},
+    },
+
+    "transformer": {
+                    "nhead" : 1,
+                    "num_layers" : 6,
+                    "dim_feedforward" : 256,
+                    "max_seq_len" : 2000
+                },
+                    
+    "transformer_param_space":  {
+        "transformer.nhead":           {"type": "categorical", "choices": [1, 2, 3]}, # Must divide d_model
+        "transformer.num_layers":      {"type": "int", "low": 1, "high": 4},
+        "transformer.dim_feedforward": {"type": "categorical", "choices": [64, 128, 256]},
+        },
+
+    "esn": {
+                "units": 200,   
+                "lr": 0.5,
+                "sr": 0.9,
+                "ridge": 1e-7,    # Regularization coefficient  
+            },
+            
     "simulate": {
         "batch_size": 16,          # Validation trajectory evaluation batch scale
         "seq_len": 3001            # Length of a full multi-day production run

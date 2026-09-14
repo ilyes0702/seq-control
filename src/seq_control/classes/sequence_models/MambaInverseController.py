@@ -249,6 +249,71 @@ class MambaSurrogateModel(nn.Module):
     def mamba_dt(self):
         return getattr(self.core, "extracted_dt", getattr(self.core, "dt", None))
 
+
+import torch
+
+class MambaMPPIController:
+    def __init__(self, model, horizon=15, num_samples=1000, noise_sigma=0.1, u_min=-1.0, u_max=1.0):
+        self.model = model
+        self.H = horizon
+        self.K = num_samples
+        self.sigma = noise_sigma
+        self.u_min = u_min
+        self.u_max = u_max
+        self.u_dim = model.input_dim
+        
+        # Initial control mean sequence over horizon [H, u_dim]
+        self.U_mean = torch.zeros(self.H, self.u_dim)
+
+    @torch.no_grad()
+    def compute_action(self, current_v_k, y_ref, temperature=0.05):
+        """
+        :param current_v_k: Tensor of shape [1, d_model]
+        :param y_ref: Reference target tensor [H, output_dim]
+        :return: Next immediate optimal control action u_0 [u_dim]
+        """
+        device = current_v_k.device
+        
+        # 1. Sample control perturbations: shape [K, H, u_dim]
+        noise = torch.randn(self.K, self.H, self.u_dim, device=device) * self.sigma
+        U_samples = self.U_mean.unsqueeze(0) + noise
+        U_samples = torch.clamp(U_samples, self.u_min, self.u_max)
+        
+        # 2. Duplicate Mamba hidden state across K parallel samples
+        self.model.reset_memory(batch_size=self.K, device=device)
+        
+        costs = torch.zeros(self.K, device=device)
+        
+        # 3. Parallel rollout over horizon H
+        for t in range(self.H):
+            u_t = U_samples[:, t, :] # [K, u_dim]
+            
+            # Form input vector v_k for time t (embed u_t into current context)
+            v_k_batch = current_v_k.repeat(self.K, 1)
+            # (Optionally update u-slot in v_k_batch with u_t if surrogate takes combined state-input)
+            
+            y_pred = self.model.step(v_k_batch) # [K, output_dim]
+            
+            # Tracking loss + control effort penalty
+            tracking_cost = torch.sum((y_pred - y_ref[t]) ** 2, dim=-1)
+            control_cost = 0.01 * torch.sum(u_t ** 2, dim=-1)
+            
+            costs += tracking_cost + control_cost
+
+        # 4. Compute trajectory weights via Softmax
+        weights = torch.softmax(-costs / temperature, dim=0) # [K]
+        
+        # 5. Weighted average of control sequences
+        optimal_U = torch.sum(weights.view(self.K, 1, 1) * U_samples, dim=0) # [H, u_dim]
+        
+        # Warm-start shift for next time step
+        self.U_mean[:-1] = optimal_U[1:].clone()
+        self.U_mean[-1] = optimal_U[-1].clone()
+        
+        return optimal_U[0] # Return immediate control step
+
+
+    
 import torch
 import torch.nn as nn
 import torch.optim as optim

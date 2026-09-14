@@ -13,8 +13,8 @@ import json
 import numpy as np
 
 from PIL import Image
-from seq_control.config import date as default_date
-from seq_control.config import date_and_time as default_date_and_time
+from seq_control.config import date 
+from seq_control.config import date_and_time 
 import pickle
 
 def save_model_esn(model, dirname, hyperparam_config, filename="best_fold_model"):
@@ -52,17 +52,23 @@ def save_model_esn(model, dirname, hyperparam_config, filename="best_fold_model"
        the hyperparameter configuration, making it compatible with matching reload
        routines for inference or further evaluation.
     """
-    os.makedirs(dirname, exist_ok=True)
-    checkpoint_path = os.path.join(dirname, f"{filename}.pkl")
+    # Construct the directory and filename logic
+    model_dir = f"src/seq_control/results/{date}/{date_and_time}/{dirname}/"
+    save_filename = f"{date_and_time}_{filename}.pkl"
+
+    
+    os.makedirs(model_dir, exist_ok=True)
+    full_path = os.path.join(model_dir, save_filename)
+
     
     checkpoint = {
         'config': hyperparam_config,
         'model_state_dict': model.model  # Saves the ReservoirPy pipeline layout + trained readout
     }
     
-    with open(checkpoint_path, 'wb') as f:
+    with open(full_path, 'wb') as f:
         pickle.dump(checkpoint, f)
-    print(f"💾 ESN Model successfully saved to: {checkpoint_path}")
+    print(f"💾 ESN Model successfully saved to: {full_path}")
 
 def save_esn_parameters_to_csv(model, fold_dir):
     """
@@ -153,12 +159,10 @@ def save_model(model, dirname, hyperparam_config, filename="trained_controller")
     """
     # Assuming 'date' and 'date_and_time' are defined globally 
     # or extracted from your training session context
-    global_date = default_date # e.g., "2026-04-29"
-    timestamp = default_date_and_time # e.g., "2026-04-29_11-22"
 
     # Construct the directory and filename logic
-    model_dir = f"src/seq_control/results/{global_date}/{timestamp}/{dirname}/"
-    save_filename = f"{timestamp}_{filename}.pt"
+    model_dir = f"src/seq_control/results/{date}/{date_and_time}/{dirname}/"
+    save_filename = f"{date_and_time}_{filename}.pt"
 
     
     os.makedirs(model_dir, exist_ok=True)
@@ -212,7 +216,7 @@ def save_df_to_csv(df, dirname, filename, max_path_length=255):
 
     .. note::
        - Floating-point values are rounded using ``df.round(6)`` prior to writing.
-       - The directory hierarchy is dynamically set to ``results/<default_date>/<default_date_and_time>/<dirname>/reports/``.
+       - The directory hierarchy is dynamically set to ``results/<date>/<date_and_time>/<dirname>/reports/``.
        - If the generated ``full_path`` exceeds ``max_path_length``, the filename stem is safely truncated to ensure the path fits within OS boundaries.
        - The DataFrame index is excluded from the output file (``index=False``).
     """
@@ -220,8 +224,8 @@ def save_df_to_csv(df, dirname, filename, max_path_length=255):
     df = df.round(6)
     
      # Check full path length
-    dirname = f"src/seq_control/results/{default_date}/{default_date_and_time}/{dirname}/reports/"
-    filename = f"{default_date_and_time}_{filename}.csv"
+    dirname = f"src/seq_control/results/{date}/{date_and_time}/{dirname}/reports/"
+    filename = f"{date_and_time}_{filename}.csv"
     os.makedirs(dirname, exist_ok=True)
     full_path = os.path.join(dirname, filename)
     if len(full_path) > max_path_length:
@@ -268,7 +272,7 @@ def save_to_json(data, dirname, filename, max_path_length=255):
                        encoder or custom NumPy handler.
 
     .. note::
-       - Target directory layout is structured as ``results/<default_date>/<default_date_and_time>/<dirname>/reports/``.
+       - Target directory layout is structured as ``results/<date>/<date_and_time>/<dirname>/reports/``.
        - If a ``pandas.DataFrame`` is provided, floats are rounded using ``df.round(4)``.
        - If the fully constructed filepath exceeds ``max_path_length``, the filename stem is truncated.
        - Embedded NumPy arrays are serialized as Python lists (``obj.tolist()``), while NumPy scalar types
@@ -285,8 +289,8 @@ def save_to_json(data, dirname, filename, max_path_length=255):
 
     # 2. Construct paths (using your specific global date variables)
     # Ensure these variables (date, date_and_time) are defined in your script
-    dirname = f"src/seq_control/results/{default_date}/{default_date_and_time}/{dirname}/reports/"
-    filename = f"{default_date_and_time}_{filename}.json"
+    dirname = f"src/seq_control/results/{date}/{date_and_time}/{dirname}/reports/"
+    filename = f"{date_and_time}_{filename}.json"
     
     os.makedirs(dirname, exist_ok=True)
     full_path = os.path.join(dirname, filename)
@@ -347,8 +351,8 @@ def save_plot_image(image, filename, dirname):
     :raises OSError: If folder creation fails or file write operations are denied by the OS.
 
     .. note::
-       - The output directory hierarchy follows ``results/<default_date>/<default_date_and_time>/<dirname>/plots/``.
-       - The final filename is automatically formatted as ``<default_date_and_time>_<filename>.png``.
+       - The output directory hierarchy follows ``results/<date>/<date_and_time>/<dirname>/plots/``.
+       - The final filename is automatically formatted as ``<date_and_time>_<filename>.png``.
     """
     # 1. Validation
     if not isinstance(image, Image.Image):
@@ -356,13 +360,13 @@ def save_plot_image(image, filename, dirname):
     
     # 2. Construct the directory path
     # Using your specific format: results/{date}/{date_and_time}/{dirname}/plots
-    path = f"src/seq_control/results/{default_date}/{default_date_and_time}/{dirname}/plots"
+    path = f"src/seq_control/results/{date}/{date_and_time}/{dirname}/plots"
     
     # 3. Create directory if it doesn't exist
     os.makedirs(path, exist_ok=True)
     
     # 4. Define full file path
-    full_path = f"{path}/{default_date_and_time}_{filename}"
+    full_path = f"{path}/{date_and_time}_{filename}"
     if not full_path.endswith(".png"):
         full_path += ".png"
     
@@ -399,13 +403,13 @@ def save_dataset(data_dict, dirname, filename):
     :raises RuntimeError: If PyTorch encounters a serialization error while writing tensors to disk.
 
     .. note::
-       - Target directory layout follows ``results/<default_date>/<default_date_and_time>/<dirname>/dataset/``.
-       - Output file is saved with a timestamp prefix as ``<default_date_and_time>_<filename>.pt``.
+       - Target directory layout follows ``results/<date>/<date_and_time>/<dirname>/dataset/``.
+       - Output file is saved with a timestamp prefix as ``<date_and_time>_<filename>.pt``.
        - If total file path length exceeds 255 characters, the filename stem is automatically truncated.
     """
     # Construct directory logic consistent with your other functions
-    target_dir = f"src/seq_control/results/{default_date}/{default_date_and_time}/{dirname}/dataset/"
-    save_filename = f"{default_date_and_time}_{filename}.pt"
+    target_dir = f"src/seq_control/results/{date}/{date_and_time}/{dirname}/dataset/"
+    save_filename = f"{date_and_time}_{filename}.pt"
     
     os.makedirs(target_dir, exist_ok=True)
     full_path = os.path.join(target_dir, save_filename)
@@ -447,12 +451,12 @@ def save_dataset_with_csv(data_dict, dirname, filename):
     :raises OSError: If directory creation fails or write permissions are denied.
     :raises RuntimeError: If PyTorch encounters a serialization error.
     """
-    target_dir = f"src/seq_control/results/{default_date}/{default_date_and_time}/{dirname}/dataset/"
+    target_dir = f"src/seq_control/results/{date}/{date_and_time}/{dirname}/dataset/"
     os.makedirs(target_dir, exist_ok=True)
     max_path_length = 255
 
     # --- 1. SAVE PYTORCH BINARY FILE (.pt) ---
-    pt_filename = f"{default_date_and_time}_{filename}.pt"
+    pt_filename = f"{date_and_time}_{filename}.pt"
     full_pt_path = os.path.join(target_dir, pt_filename)
 
     if len(full_pt_path) > max_path_length:
@@ -504,7 +508,7 @@ def save_dataset_with_csv(data_dict, dirname, filename):
             continue
 
         # Save CSV with OS path length safety check
-        csv_filename = f"{default_date_and_time}_{filename}_{key}.csv"
+        csv_filename = f"{date_and_time}_{filename}_{key}.csv"
         full_csv_path = os.path.join(target_dir, csv_filename)
 
         if len(full_csv_path) > max_path_length:
@@ -543,8 +547,8 @@ def save_scaler_object(scaler, dirname, filename, max_path_length=255):
     :raises PicklingError: If the provided scaler object contains unpicklable references or state.
 
     .. note::
-       - The output directory hierarchy follows ``results/<default_date>/<default_date_and_time>/<dirname>/scalers/``.
-       - Output file is saved with a timestamp prefix as ``<default_date_and_time>_<filename>.pkl``.
+       - The output directory hierarchy follows ``results/<date>/<date_and_time>/<dirname>/scalers/``.
+       - Output file is saved with a timestamp prefix as ``<date_and_time>_<filename>.pkl``.
        - File extensions are automatically validated to ensure a single ``.pkl`` suffix.
        - If total file path length exceeds ``max_path_length``, the filename stem is automatically truncated.
     """
@@ -553,8 +557,8 @@ def save_scaler_object(scaler, dirname, filename, max_path_length=255):
         filename += ".pkl"
 
     # 2. Construct paths using your specific global variables
-    target_dir = f"src/seq_control/results/{default_date}/{default_date_and_time}/{dirname}/scalers/"
-    save_filename = f"{default_date_and_time}_{filename}"
+    target_dir = f"src/seq_control/results/{date}/{date_and_time}/{dirname}/scalers/"
+    save_filename = f"{date_and_time}_{filename}"
     
     os.makedirs(target_dir, exist_ok=True)
     full_path = os.path.join(target_dir, save_filename)

@@ -430,12 +430,7 @@ hyperparam_config_TrophophasePlant = {
     "mamba.expand":  {"type": "int", "low": 1, "high": 10},
     },
 
-    "transformer": {
-        "nhead" : 2,
-        "num_layers" : 6,
-        "dim_feedforward" : 256,
-        "max_seq_len" : 2000
-    },
+    
 
     "lstm":{
         "hidden_size": 16,
@@ -443,6 +438,13 @@ hyperparam_config_TrophophasePlant = {
         "dropout": 0.1
 
     },
+    "transformer": {
+            "nhead" : 2,
+            "num_layers" : 6,
+            "dim_feedforward" : 256,
+            "max_seq_len" : 2000
+        },
+        
     "transformer_param_space":  {
     "transformer.nhead":           {"type": "categorical", "choices": [1, 2, 3]}, # Must divide d_model
     "transformer.num_layers":      {"type": "int", "low": 1, "high": 4},

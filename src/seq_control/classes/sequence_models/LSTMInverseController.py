@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 class LSTMInverseController(nn.Module):
-    def __init__(self, hyperparam_config, feature_dim=None):
+    def __init__(self, hyperparam_config):
         """
         LSTM-based Inverse Controller supporting arbitrary sliding window inputs 
         and stateful step-by-step rolling evaluation.
@@ -25,12 +25,11 @@ class LSTMInverseController(nn.Module):
         self.dropout = lstm_cfg["dropout"] if self.num_layers > 1 else 0.0
         
         # 2. Compute dynamic input dimension based on sliding window sizes
-        if feature_dim is not None:
-            self.d_model = feature_dim
-        else:
-            n_y = hyperparam_config["train"]["n_y"]
-            n_u = hyperparam_config["train"]["n_u"]
-            self.d_model = n_u * self.input_dim + (n_y + 2) * self.output_dim
+        
+        n_y = hyperparam_config["train"]["n_y"]
+        n_u = hyperparam_config["train"]["n_u"]
+        # v_k = [y_{k+1}, y_k ... y_{k-n_y}, u_{k-1} ... u_{k-n_u}]
+        self.d_model = n_u * self.input_dim + (n_y + 2) * self.output_dim
             
         print(f"🛠️ Initializing LSTM core with d_model = {self.d_model}, hidden_dim = {self.hidden_dim}, num_layers = {self.num_layers}")
         
