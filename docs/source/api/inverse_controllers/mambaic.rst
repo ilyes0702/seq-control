@@ -30,8 +30,8 @@ MambaInverseController
               "d_conv": int,       # Convolution kernel size
           },
           "train": {
-              "n_y": int,          # Lookback history size for outputs y
-              "n_u": int,          # Lookback history size for controls u
+              "nu_y": int,          # Lookback history size for outputs y
+              "nu_u": int,          # Lookback history size for controls u
           }
       }
 
@@ -54,7 +54,7 @@ MambaInverseController
 
       .. math::
 
-         d\_model = (n_u \cdot \text{input\_dim}) + ((n_y + 2) \cdot \text{output\_dim})
+         d\_model = (nu_u \cdot \text{input\_dim}) + ((nu_y + 2) \cdot \text{output\_dim})
 
    .. py:attribute:: core
       :type: Mamba

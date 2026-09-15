@@ -17,19 +17,26 @@ from seq_control.classes.plants.CocultivationPlant import *
 from seq_control.classes.plants.IndForProteinProductionPlant import *
 
 def main() -> None:
-	"""Create a plant instance and generate training data. Change which plant is instantiated by uncommenting the other	option below. The dataset folder is named after the plant class.
+	"""Create plant instances and generate training data.
 	"""
 
-	# Define which plants to study and the respective configuration dictionaries
+	log_message("Beginning of data generation script")
+	description = get_run_description()
+	log_message("Starting plant instances initialization...")
+
+	# 1. Define which plants to study and the respective configuration dictionaries
 	plant_list = [
-		#ChemostatPlant(hyperparam_config=hyperparam_config_ChemostatPlant),
-		#TrophophasePlant(hyperparam_config=hyperparam_config_TrophophasePlant),
-		#IdiophasePlant(hyperparam_config=hyperparam_config_IdiophasePlant),
-		#CoCultivationPlant(hyperparam_config=hyperparam_config_CoCultivationPlant),
+		ChemostatPlant(hyperparam_config=hyperparam_config_ChemostatPlant),
+		TrophophasePlant(hyperparam_config=hyperparam_config_TrophophasePlant),
+		IdiophasePlant(hyperparam_config=hyperparam_config_IdiophasePlant),
+		CoCultivationPlant(hyperparam_config=hyperparam_config_CoCultivationPlant),
 		IndForProteinProductionPlant(hyperparam_config=hyperparam_config_IndForProteinProductionPlant)
 	]
 
-	# Generate data for the plants defined in plant_list. The data for plant pl can be then found in the folder results/YYYY-MM-DD/YYYY-MM-DD/<pl.__class__.__name__>
+	log_message("Finished plant instances initialization.")
+	log_message("Starting training data generation...")
+
+	# 2. Generate data for the plants defined in plant_list. The data for plant pl can be then found in the folder results/YYYY-MM-DD/YYYY-MM-DD/<pl.__class__.__name__>
 	for pl in plant_list:
 		dirname = pl.__class__.__name__
 		hyperparam_config = pl.hyperparam_config
@@ -44,6 +51,8 @@ def main() -> None:
 			save_overlay_plot=True,
 			save_sequence_data=True
 			)
+	
+	log_message("Finished training data generation.")
 
 if __name__ == "__main__":
 	main()

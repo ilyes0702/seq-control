@@ -318,7 +318,7 @@ def generate_training_batch(plant, training_data_cfg):
         raw_u_history.append(u_signal)
         raw_state_history.append(state.clone())
 
-        state, _ = plant.step(state, u_signal, t, dt)
+        state, _ = plant.step(state, u_signal, t)
         state = state.detach()
 
     # Stack raw arrays along the time dimension (dim=1)
@@ -331,8 +331,8 @@ def generate_training_batch(plant, training_data_cfg):
 #=== FUNCTION TO CREATE SLICED WINDOW DATASET FOR SYSTEM IDENTIFICATION ===#
 def create_sliced_window_dataset_sysid(Y_trajectories, 
                                        U_trajectories, 
-                                       n_y, 
-                                       n_u):
+                                       nu_y, 
+                                       nu_u):
     """
     Slices raw batch continuous MIMO trajectories into history-windowed features 
     and targets for a system identifier.
@@ -340,8 +340,8 @@ def create_sliced_window_dataset_sysid(Y_trajectories,
     Parameters:
         Y_trajectories: Tensor or NumPy array of shape [Num_Traces, Seq_Len, input_dim] (Plant Outputs)
         U_trajectories: Tensor or NumPy array of shape [Num_Traces, Seq_Len, output_dim] (Control Inputs)
-        n_y: Number of past plant output lookbacks (excluding current y_k)
-        n_u: Number of past control action lookbacks
+        nu_y: Number of past plant output lookbacks (excluding current y_k)
+        nu_u: Number of past control action lookbacks
         
     Returns:
         X_raw: NumPy array of shape [Num_Traces, Sliding_Seq_Len, Feature_Dim]
@@ -357,13 +357,13 @@ def create_sliced_window_dataset_sysid(Y_trajectories,
     num_traces, total_seq_len, output_dim = Y_trajectories.shape
     input_dim = U_trajectories.shape[-1]
     
-    start_idx = max(n_y, n_u)
+    start_idx = max(nu_y, nu_u)
     end_idx = total_seq_len - 1
     sliding_seq_len = end_idx - start_idx
     
     # Calculate total feature dimension for verification
-    # y_{k+1} (input_dim) + y_k...y_{k-n_y} (input_dim * (n_y + 1)) + u_{k-1}...u_{k-n_u} (output_dim * n_u)
-    feature_dim = n_u * input_dim + (n_y+2) * output_dim
+    # y_{k+1} (input_dim) + y_k...y_{k-nu_y} (input_dim * (nu_y + 1)) + u_{k-1}...u_{k-nu_u} (output_dim * nu_u)
+    feature_dim = nu_u * input_dim + (nu_y+2) * output_dim
     
     print(f"📦 Slicing {num_traces} traces. Window metrics:")
     print(f"   ↳ Clean Rollout Steps per Trace: {sliding_seq_len}")
@@ -384,11 +384,11 @@ def create_sliced_window_dataset_sysid(Y_trajectories,
             # 1. Future target trajectory point: y_{k+1}
             y_next = y_trace[k + 1]
 
-            # 2. Plant output history: [y_k, y_{k-1}, ..., y_{k-n_y}]
-            y_hist = y_trace[k - n_y : k + 1].flatten()
+            # 2. Plant output history: [y_k, y_{k-1}, ..., y_{k-nu_y}]
+            y_hist = y_trace[k - nu_y : k + 1].flatten()
 
-            # 3. Control input history: [u_k, u_{k-1}, ..., u_{k-n_u}]
-            u_hist = u_trace[k - n_u : k + 1].flatten()
+            # 3. Control input history: [u_k, u_{k-1}, ..., u_{k-nu_u}]
+            u_hist = u_trace[k - nu_u : k + 1].flatten()
             
             # Combine into a single feature row v_k
             v_k = np.concatenate([y_hist, u_hist])
@@ -414,8 +414,8 @@ def create_sliced_window_dataset_sysid(Y_trajectories,
 #=== FUNCTION TO CREATE SLICED WINDOW DATASET FOR INVERSE CONTROL ===#
 def create_sliced_window_dataset_ic(Y_trajectories, 
                                     U_trajectories, 
-                                    n_y, 
-                                    n_u):
+                                    nu_y, 
+                                    nu_u):
     """
     Slices raw batch continuous MIMO trajectories into history-windowed features 
     and targets for a system identifier.
@@ -426,10 +426,10 @@ def create_sliced_window_dataset_ic(Y_trajectories,
     :param U_trajectories: Control inputs tensor or array of shape 
         ``[Num_Traces, Seq_Len, input_dim]``.
     :type U_trajectories: torch.Tensor or numpy.ndarray
-    :param n_y: Number of past plant output lookbacks (excluding current :math:`y_k`).
-    :type n_y: int
-    :param n_u: Number of past control action lookbacks.
-    :type n_u: int
+    :param nu_y: Number of past plant output lookbacks (excluding current :math:`y_k`).
+    :type nu_y: int
+    :param nu_u: Number of past control action lookbacks.
+    :type nu_u: int
 
     :returns: A dictionary containing the windowed feature and target tensors:
 
@@ -447,13 +447,13 @@ def create_sliced_window_dataset_ic(Y_trajectories,
     num_traces, total_seq_len, output_dim = Y_trajectories.shape
     input_dim = U_trajectories.shape[-1]
     
-    start_idx = max(n_y, n_u)
+    start_idx = max(nu_y, nu_u)
     end_idx = total_seq_len - 1
     sliding_seq_len = end_idx - start_idx
     
     # Calculate total feature dimension for verification
-    # y_{k+1} (input_dim) + y_k...y_{k-n_y} (input_dim * (n_y + 1)) + u_{k-1}...u_{k-n_u} (output_dim * n_u)
-    feature_dim = n_u * input_dim + (n_y+2) * output_dim
+    # y_{k+1} (input_dim) + y_k...y_{k-nu_y} (input_dim * (nu_y + 1)) + u_{k-1}...u_{k-nu_u} (output_dim * nu_u)
+    feature_dim = nu_u * input_dim + (nu_y+2) * output_dim
     
     print(f"📦 Slicing {num_traces} traces. Window metrics:")
     print(f"   ↳ Clean Rollout Steps per Trace: {sliding_seq_len}")
@@ -474,11 +474,11 @@ def create_sliced_window_dataset_ic(Y_trajectories,
             # 1. Future target trajectory point: y_{k+1}
             y_next = y_trace[k + 1]
 
-            # 2. Plant output history: [y_k, y_{k-1}, ..., y_{k-n_y}]
-            y_hist = y_trace[k - n_y : k + 1].flatten()
+            # 2. Plant output history: [y_k, y_{k-1}, ..., y_{k-nu_y}]
+            y_hist = y_trace[k - nu_y : k + 1].flatten()
 
-            # 3. Control input history: [u_{k-1}, u_{k-2}, ..., u_{k-n_u}]
-            u_hist = u_trace[k - n_u : k].flatten()
+            # 3. Control input history: [u_{k-1}, u_{k-2}, ..., u_{k-nu_u}]
+            u_hist = u_trace[k - nu_u : k].flatten()
             
             # Combine into a single feature row v_k
             v_k = np.concatenate([y_next, y_hist, u_hist])
@@ -960,8 +960,8 @@ def generate_io_dataset(
     dataset_sw_ic = create_sliced_window_dataset_ic(
         Y_trajectories=dataset_io["y"],
         U_trajectories=dataset_io["u"],
-        n_y=training_data_cfg["n_y"],
-        n_u=training_data_cfg["n_u"]
+        nu_y=training_data_cfg["nu_y"],
+        nu_u=training_data_cfg["nu_u"]
     )
     save_dataset(dataset_sw_ic, 
                  ic_dir, 
@@ -971,8 +971,8 @@ def generate_io_dataset(
     train_data_sw_ic = create_sliced_window_dataset_ic(
         Y_trajectories=train_data_io["y"],
         U_trajectories=train_data_io["u"],
-        n_y=training_data_cfg["n_y"],
-        n_u=training_data_cfg["n_u"]
+        nu_y=training_data_cfg["nu_y"],
+        nu_u=training_data_cfg["nu_u"]
     )
     save_dataset(train_data_sw_ic, 
                  ic_dir, 
@@ -982,8 +982,8 @@ def generate_io_dataset(
     val_data_sw_ic = create_sliced_window_dataset_ic(
         Y_trajectories=val_data_io["y"],
         U_trajectories=val_data_io["u"],
-        n_y=training_data_cfg["n_y"],
-        n_u=training_data_cfg["n_u"]
+        nu_y=training_data_cfg["nu_y"],
+        nu_u=training_data_cfg["nu_u"]
     )
     save_dataset(val_data_sw_ic, 
                  ic_dir, 
@@ -998,8 +998,8 @@ def generate_io_dataset(
     dataset_sw_sysid = create_sliced_window_dataset_sysid(
         Y_trajectories=dataset_io["y"],
         U_trajectories=dataset_io["u"],
-        n_y=training_data_cfg["n_y"],
-        n_u=training_data_cfg["n_u"]
+        nu_y=training_data_cfg["nu_y"],
+        nu_u=training_data_cfg["nu_u"]
     )
     save_dataset(dataset_sw_sysid, 
                  sysid_dir, 
@@ -1009,8 +1009,8 @@ def generate_io_dataset(
     train_data_sw_sysid = create_sliced_window_dataset_sysid(
         Y_trajectories=train_data_io["y"],
         U_trajectories=train_data_io["u"],
-        n_y=training_data_cfg["n_y"],
-        n_u=training_data_cfg["n_u"]
+        nu_y=training_data_cfg["nu_y"],
+        nu_u=training_data_cfg["nu_u"]
     )
     save_dataset(train_data_sw_sysid, 
                  sysid_dir, 
@@ -1020,8 +1020,8 @@ def generate_io_dataset(
     val_data_sw_sysid = create_sliced_window_dataset_sysid(
         Y_trajectories=val_data_io["y"],
         U_trajectories=val_data_io["u"],
-        n_y=training_data_cfg["n_y"],
-        n_u=training_data_cfg["n_u"]
+        nu_y=training_data_cfg["nu_y"],
+        nu_u=training_data_cfg["nu_u"]
     )
     save_dataset(val_data_sw_sysid, 
                  sysid_dir, 

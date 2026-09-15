@@ -7,7 +7,7 @@ class CoCultivationPlant:
     community under optogenetic control. System dynamics incorporate 
     optogenetically-modulated Monod growth kinetics, enzyme synthesis driven by 
     light inputs, substrate depletion, and continuous dilution in a chemostat. 
-    State integration is performed using 4th-order explicit Runge-Kutta (RK4).
+    State integration is performed using RK45.
 
     :param hyperparam_config: Configuration dictionary containing plant kinetics,
         bioprocess parameters, device selection, and simulation time step settings.
@@ -27,7 +27,7 @@ class CoCultivationPlant:
         :type hyperparam_config: dict
         """
         self.device = hyperparam_config["train"]["device"]
-        self.dt = hyperparam_config["signal"]["dt"]
+        self.dt = hyperparam_config["training_data_cfg"]["dt"]
         self.plant_cfg = hyperparam_config["plant"]
 
         # Kinetic and Bioprocess Parameters
@@ -48,8 +48,8 @@ class CoCultivationPlant:
         self.k_I_2 = self.plant_cfg["k_I_2"]
         self.d_l = self.plant_cfg["d_l"]
         self.S_in = self.plant_cfg["S_in"]
-        self.d_a_1 = 150
-        self.d_a_2 = 150
+        self.d_a_1 = self.plant_cfg["d_a_1"]
+        self.d_a_2 = self.plant_cfg["d_a_2"]
 
         self.hyperparam_config = hyperparam_config
 
@@ -70,24 +70,34 @@ class CoCultivationPlant:
         :rtype: torch.Tensor
         """
         # Fetch nominal values from config or defaults
-        x1_nom = self.plant_cfg["x10"]
-        x2_nom = self.plant_cfg["x20"]
-        s_nom  = self.plant_cfg["s0"]
-        a1_nom = self.plant_cfg["a10"]
-        a2_nom = self.plant_cfg["a20"]
+        x1_init, x2_init, x3_init, x4_init, x5_init = self.hyperparam_config["plant"]["initial_state"]
 
-        nominal = torch.tensor([x1_nom, x2_nom, s_nom, a1_nom, a2_nom], 
-                               device=self.device, dtype=torch.float32)
+        x1_init = torch.full((batch_size, 1), x1_init, device=self.device)
+        x2_init = torch.full((batch_size, 1), x2_init, device=self.device)
+        x3_init = torch.full((batch_size, 1), x3_init, device=self.device)
+        x4_init = torch.full((batch_size, 1), x4_init, device=self.device)
+        x5_init = torch.full((batch_size, 1), x5_init, device=self.device)
         
-        # Broadcast across batch dimension
-        states = nominal.repeat(batch_size, 1)
-
         if randomize:
-            # Randomization within ±5% boundaries
-            rand_scale = 0.99 + 0.02 * torch.rand((batch_size, 5), device=self.device)
-            states = states * rand_scale
+            # Randomization formula: nominal * (0.95 + 0.1 * rand) -> [0.95*nominal, 1.05*nominal)
+            x1_init = x1_init * (0.95 + 0.1 * torch.rand((batch_size, 1), device=self.device))
+            x2_init = x2_init * (0.95 + 0.1 * torch.rand((batch_size, 1), device=self.device))
+            x3_init = x3_init * (0.95 + 0.1 * torch.rand((batch_size, 1), device=self.device))
+            x4_init = x4_init * (0.95 + 0.1 * torch.rand((batch_size, 1), device=self.device))
+            x5_init = x5_init * (0.95 + 0.1 * torch.rand((batch_size, 1), device=self.device))
+        else:
+            # Create tensors filled entirely with the nominal values
+            x1_init = torch.full((batch_size, 1), x1_init, device=self.device, dtype=torch.float32)
+            x2_init = torch.full((batch_size, 1), x2_init, device=self.device, dtype=torch.float32)
+            x3_init = torch.full((batch_size, 1), x3_init, device=self.device, dtype=torch.float32)
+            x4_init = torch.full((batch_size, 1), x4_init, device=self.device, dtype=torch.float32)
+            x5_init = torch.full((batch_size, 1), x5_init, device=self.device, dtype=torch.float32)
             
-        return states
+        x_init = torch.cat([x1_init, x2_init, x3_init, x4_init, x5_init], 
+                        dim=1)
+
+        # Ensure no negative values
+        return torch.clamp(x_init, min=0.0)
 
     def get_y(self, state, t=None):
         """Extract monitored output variables from the system state vector.
@@ -245,40 +255,40 @@ class CoCultivationPlant:
             {
                 "cols": ["x1", "x2", "s", "a1", "a2"],
                 "labels": [
-                    r"$x_1 \; [\mathrm{g}\,\mathrm{L}^{-1}]$",
-                    r"$x_2 \; [\mathrm{g}\,\mathrm{L}^{-1}]$",
-                    r"$x_3 \; [\mathrm{g}\,\mathrm{L}^{-1}]$",
-                    r"$x_4 \; [\mathrm{g}\,\mathrm{L}^{-1}]$",
-                    r"$x_5 \; [\mathrm{g}\,\mathrm{L}^{-1}]$"
+                    r"$x_1 \; [\mathrm{g}\cdot\mathrm{L}^{-1}]$",
+                    r"$x_2 \; [\mathrm{g}\cdot\mathrm{L}^{-1}]$",
+                    r"$x_3 \; [\mathrm{g}\cdot\mathrm{L}^{-1}]$",
+                    r"$x_4 \; [\mathrm{g}\cdot\mathrm{L}^{-1}]$",
+                    r"$x_5 \; [\mathrm{g}\cdot\mathrm{L}^{-1}]$"
                 ],
                 "ylabel": [
-                    r"$x_1 \; [\mathrm{g}\,\mathrm{L}^{-1}]$",
-                    r"$x_2 \; [\mathrm{g}\,\mathrm{L}^{-1}]$",
-                    r"$x_3 \; [\mathrm{g}\,\mathrm{L}^{-1}]$",
-                    r"$x_4 \; [\mathrm{g}\,\mathrm{L}^{-1}]$",
-                    r"$x_5 \; [\mathrm{g}\,\mathrm{L}^{-1}]$"
+                    r"$x_1 \; [\mathrm{g}\cdot\mathrm{L}^{-1}]$",
+                    r"$x_2 \; [\mathrm{g}\cdot\mathrm{L}^{-1}]$",
+                    r"$x_3 \; [\mathrm{g}\cdot\mathrm{L}^{-1}]$",
+                    r"$x_4 \; [\mathrm{g}\cdot\mathrm{L}^{-1}]$",
+                    r"$x_5 \; [\mathrm{g}\cdot\mathrm{L}^{-1}]$"
                 ]
             },
             {
                 "cols": ["y1", "y2"],
                 "labels": [
-                    r"$y_1 \; [\mathrm{g}\,\mathrm{L}^{-1}]$",
-                    r"$y_2 \; [\mathrm{g}\,\mathrm{L}^{-1}]$"
+                    r"$y_1 \; [\mathrm{g}\cdot\mathrm{L}^{-1}]$",
+                    r"$y_2 \; [\mathrm{g}\cdot\mathrm{L}^{-1}]$"
                 ],
                 "ylabel": [
-                    r"$y_1 \; [\mathrm{g}\,\mathrm{L}^{-1}]$",
-                    r"$y_2 \; [\mathrm{g}\,\mathrm{L}^{-1}]$"
+                    r"$y_1 \; [\mathrm{g}\cdot\mathrm{L}^{-1}]$",
+                    r"$y_2 \; [\mathrm{g}\cdot\mathrm{L}^{-1}]$"
                 ]
             },
             {
                 "cols": ["u1", "u2"],
                 "labels": [
-                    r"$u_1 \; [\mathrm{W}\,\mathrm{m}^{-2}]$",
-                    r"$u_2 \; [\mathrm{W}\,\mathrm{m}^{-2}]$"
+                    r"$u_1 \; [\mathrm{W}\cdot\mathrm{m}^{-2}]$",
+                    r"$u_2 \; [\mathrm{W}\cdot\mathrm{m}^{-2}]$"
                 ],
                 "ylabel": [
-                    r"$u_1 \; [\mathrm{W}\,\mathrm{m}^{-2}]$",
-                    r"$u_2 \; [\mathrm{W}\,\mathrm{m}^{-2}]$"
+                    r"$u_1 \; [\mathrm{W}\cdot\mathrm{m}^{-2}]$",
+                    r"$u_2 \; [\mathrm{W}\cdot\mathrm{m}^{-2}]$"
                 ]
             }
         ]
@@ -286,83 +296,46 @@ class CoCultivationPlant:
 # Default hyperparameter configuration
 hyperparam_config_CoCultivationPlant = {
     "plant": {
-        # Kinetic Parameters for Strain 1 & Strain 2
-        "mu_max1": 0.982,       # Max growth rate strain 1 (1/h)
-        "mu_max2": 0.982,       # Max growth rate strain 2 (1/h)
-        "k_g_1": 2.964e-4,      # Substrate affinity constant strain 1
-        "k_g_2": 2.964e-4,      # Substrate affinity constant strain 2
-        "f_c": 1100.0,          # Conversion factor scaling enzyme concentration
-        "k_a_1": 1.7,           # Activation constant for strain 1 growth
-        "k_a_2": 0.182,         # Activation constant for strain 2 growth
-        "Y_g_b1": 10.18,        # Yield coefficient factor for strain 1
-        "Y_g_b2": 10.18,        # Yield coefficient factor for strain 2
-        "q_a_max_1": 0.337,     # Max enzyme expression rate via light 1
-        "q_a_max_2": 0.036,     # Max enzyme expression rate via light 2
-        "n_1": 2.0,             # Hill coefficient for light input 1
-        "k_I_1": 1.052,         # Light intensity constant for induction 1
-        "n_2": 4.865,           # Hill coefficient for light input 2
-        "k_I_2": 1.34,          # Light intensity constant for induction 2
-        "d_l": 0.15,            # Dilution rate of the chemostat (1/h)
-        "S_in": 200.0,          # Substrate concentration in the feed (g/L)
-        "d_a_1": 0.15,           # Enzyme degradation rate 1 # unkown
-        "d_a_2": 0.15,           # Enzyme degradation rate 2 #unknown
+        # Source of model parameters: Espinel-Ríos, S., Avalos, J. L., Del Rio Chanona, E. A., & Zhang, D. (2025). Reinforcement learning for efficient and robust multi-setpoint and multi-trajectory tracking in bioprocesses. Computers & Chemical Engineering, 202, 109297. https://doi.org/10.1016/j.compchemeng.2025.109297
+        "mu_max1": 0.982,               # Max growth rate strain 1 (1/h)
+        "mu_max2": 0.982,               # Max growth rate strain 2 (1/h)
+        "k_g_1": 2.964e-4,              # Substrate affinity constant strain 1
+        "k_g_2": 2.964e-4,              # Substrate affinity constant strain 2
+        "f_c": 1100.0,                  # Conversion factor scaling enzyme concentration
+        "k_a_1": 1.7,                   # Activation constant for strain 1 growth
+        "k_a_2": 0.182,                 # Activation constant for strain 2 growth
+        "Y_g_b1": 10.18,                # Yield coefficient factor for strain 1
+        "Y_g_b2": 10.18,                # Yield coefficient factor for strain 2
+        "q_a_max_1": 0.337,             # Max enzyme expression rate via light 1
+        "q_a_max_2": 0.036,             # Max enzyme expression rate via light 2
+        "n_1": 2.0,                     # Hill coefficient for light input 1
+        "k_I_1": 1.052,                 # Light intensity constant for induction 1
+        "n_2": 4.865,                   # Hill coefficient for light input 2
+        "k_I_2": 1.34,                  # Light intensity constant for induction 2
+        "d_l": 0.15,                    # Dilution rate of the chemostat (1/h)
+        "S_in": 200.0,                  # Substrate concentration in the feed (g/L)
+        "d_a_1": 0.15,                  # Enzyme degradation rate 1 # unkown
+        "d_a_2": 0.15,                  # Enzyme degradation rate 2 #unknown
         
-        # Signal generation center boundaries for Strain 1 (Channel 1)
-        "u_1_D_center_min": 0.5,   # Adjust these values based on your light intensity needs
-        "u_1_D_center_max": 2.0,   
-        
-        # Signal generation center boundaries for Strain 2 (Channel 2)
-        "u_2_D_center_min": 0.5,   # Adjust these values based on your light intensity needs
-        "u_2_D_center_max": 2.0,
-        
-        # Operational limits / bounds (Adjust boundaries based on your light units/caps)
-        "u_1_hard_min": 0.0,
-        "u_1_hard_max": 5.0,      # Max expected light intensity cap 
-        
-        "u_2_hard_min": 0.0,
-        "u_2_hard_max": 5.0,      # Max expected light
-        # Initial conditions (nominal state values)
-        "x10": 0.005,           # Biomass X1 (g/L)
-        "x20": 0.005,           # Biomass X2 (g/L)
-        "s0": 1.0,              # Substrate S (g/L)
-        "a10": 1.545e-2,        # Enzyme concentration A1
-        "a20": 1.655e-3,        # Enzyme concentration A2
+        # Initial conditions
+        "initial_state" : [0.005,       # Initial mass concentration of E. coli 1 [g/L]     
+                           0.005,       # Initial mass concentration of E. coli 2 [g/L]
+                           1.0,         # Initial substrate molar concentration [mmol/L]
+                           1.545e-2,    # Initial intracellular molar concentration of lysine [mmol/g]
+                           1.655e-3]    # Initial intracellular molar concentration of leucine [mmol/g]
+    },
 
-        # IO Dimensions: 2 controlled tracker variables (X1, X2), 2 actuators (I1, I2)
-        "input_dim": 2,         # Tracker dimension (y)
-        "output_dim": 2         # Actuator control dimension (u)
-    },
-    "signal": {
-        "lambd": 4,
-        "p": 0.5,
-        "seq_len": 2001,
-        "dt": 0.01               # Matching the dt=1 step time from your original code
-    },
-    "train": {
-        "k_folds": 2,
-        "epochs": 100,
-        "batch_size": 1000,
-        "lr": 1e-3,
-        "device": "cuda",       # Automatically falls back to device selection patterns
-        "delay_steps": 1,
-        "loss_function": "MSELoss()", 
-        "lr_decay_rate": 1,
-        "min_correlation_threshold": -1.1,
-        "test_patience_epochs": 3,
-        "test_min_delta": 0.0001,
-        "n_y" : 2,
-        "n_u" : 2,
-        "mini_batch_size": 1
-    },
     "training_data_cfg": {
-        "batch_size": 100, 
+        "batch_size": 100,
+        "dt" : 0.01, 
         "seq_len": 2001,
+
         "input_dim": 2,        
         "output_dim": 2,         
-        "dt" : 0.01,
+        
         "min_correlation_threshold": -1.1,
-        "n_u": 2,
-        "n_y": 2,
+        "nu_u": 2,
+        "nu_y": 2,
 
         "u_1_D_center_min": 0.5,
         "u_1_D_center_max": 2.0,
@@ -392,47 +365,79 @@ hyperparam_config_CoCultivationPlant = {
         "u_1_lambd" : 4,
         
         "u_2_p" : 0.5,
-        "u_2_lambd" : 4,
-        
-
-        
+        "u_2_lambd" : 4,           
     },
+
+    "train": {
+        "k_folds": 2,
+        "epochs": 100,
+        "batch_size": 1000,
+        "lr": 1e-3,
+        "device": "cuda",
+        "mini_batch_size": 1,       
+
+        "loss_function": "MSELoss()", 
+        "patience_epochs": 3,
+        "patience_min_improvement": 0.0001,
+
+        "nu_y" : 2,
+        "nu_u" : 2,        
+    },
+    
+    # Default hyperparameters for Mamba-based sequence models
     "mamba": {
-            "d_state": 1,
-            "expand": 1,
-            "d_conv" : 1
+        "d_state": 16,                      
+        "expand": 4,
+        "d_conv" : 2
+    },
+    # Hyperparameter space of the Mamba sequence model for hyperparameter tuning via Optuna
+    "mamba_param_space" : {
+        "mamba.d_conv":  {"type": "int", "low": 1, "high": 10},
+        "mamba.d_state": {"type": "int", "low": 1, "high": 64},
+        "mamba.expand":  {"type": "int", "low": 1, "high": 10},
         },
+    # Default hyperparameters for LSTM-based sequence model
     "lstm": {
-            "hidden_size": 64,
-            "num_layers": 2,
-            "dropout": 0.1,
-        },
+        "hidden_size": 64,
+        "num_layers": 2,
+        "dropout": 0.1,
+    },
+    # Hyperparameter space of the LSTM sequence model for hyperparameter tuning via Optuna
     "lstm_param_space" : {
         "lstm.hidden_size": {"type": "int", "low": 16, "high": 128},
         "lstm.num_layers": {"type": "int", "low": 1, "high": 4},
         "lstm.dropout": {"type": "float", "low": 0.0, "high": 0.5},
     },
-
+    # Default hyperparameters for Transformer-based sequence model 
     "transformer": {
                     "nhead" : 2,
                     "num_layers" : 6,
                     "dim_feedforward" : 256,
                     "max_seq_len" : 2000
                 },
-                    
+    # Hyperparameter space of the Transformer sequence model for hyperparameter tuning via Optuna                
     "transformer_param_space":  {
         "transformer.nhead":           {"type": "categorical", "choices": [1, 2, 3]}, # Must divide d_model
         "transformer.num_layers":      {"type": "int", "low": 1, "high": 4},
         "transformer.dim_feedforward": {"type": "categorical", "choices": [64, 128, 256]},
         },
+    # Default hyperparameters for ESN-based sequence model 
     "esn": {
-                "units": 200,   
-                "lr": 0.5,
-                "sr": 0.9,
-                "ridge": 1e-7,    # Regularization coefficient  
-            },
-    "simulate": {
+        "units": 200,   
+        "lr": 0.5,
+        "sr": 0.9,
+        "ridge": 1e-7,    # Regularization coefficient  
+    },
+
+    "validation_trajectories" : {
         "batch_size": 10,
-        "seq_len": 2001,
-    }
+        "seq_len"   : 401,
+        "set_point" : 0.25,
+        "amplitude" : 0.04,
+        "period"    : 20.0,
+
+        "y_start"   : 0.5,
+        "y_target"  : 0.2,
+        "tau"       : 0.1         
+    },
 }

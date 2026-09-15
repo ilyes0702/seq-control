@@ -15,7 +15,6 @@ class ChemostatPlant:
         \\frac{ds}{dt} = u (s_R - s) - \\frac{\\mu x}{Y}
 
     Attributes:
-        VARIABLE_UNITS (dict): Mapping of state and control variable names to physical units.
         device (torch.device or str): Execution device for tensor operations (CPU or CUDA).
         dt (float): Simulation step size in hours.
         mu_max (torch.Tensor): Maximum specific growth rate parameter (:math:`h^{-1}`).
@@ -24,15 +23,7 @@ class ChemostatPlant:
         sR (torch.Tensor): Feed substrate concentration parameter (:math:`g\\,L^{-1}`).
         hyperparam_config (dict): Full hyperparameter configuration dictionary.
     """
-    VARIABLE_UNITS = {
-        "x": "g L⁻¹",      # Biomass concentration
-        "biomass": "g L⁻¹",
-        "s": "g L⁻¹",      # Substrate concentration
-        "substrate": "g L⁻¹",
-        "y": "h⁻¹",        # Growth rate (mu)
-        "mu": "h⁻¹",
-        "u": "h⁻¹",        # Dilution rate (D)
-    }
+
     def __init__(self, hyperparam_config):
         """Initialize the Chemostat plant model with configuration settings.
 
@@ -45,13 +36,13 @@ class ChemostatPlant:
         self.dt = hyperparam_config["training_data_cfg"]["dt"]
 
         # Biological Parameters from Config
-        self.mu_max = torch.tensor(hyperparam_config["plant"]["mu-max"], device=self.device)
+        self.mu_max = torch.tensor(hyperparam_config["plant"]["mu_max"], device=self.device)
         self.Ks = torch.tensor(hyperparam_config["plant"]["Ks"], device=self.device)
         self.Y = torch.tensor(hyperparam_config["plant"]["Y"], device=self.device)
         self.sR = torch.tensor(hyperparam_config["plant"]["sR"], device=self.device)
         self.hyperparam_config = hyperparam_config
 
-    def get_initial_state(self, batch_size):
+    def get_initial_state(self, batch_size, randomize=True):
         """Generate randomized initial state vectors for training batch initialization.
 
         :param batch_size: Number of parallel batch instances to sample.
@@ -59,9 +50,22 @@ class ChemostatPlant:
         :returns: Tensor of shape ``(batch_size, 2)`` representing initial states ``[x, s]``.
         :rtype: torch.Tensor
         """
-        x_init = torch.rand((batch_size, 1), device=self.device) * 0.2 + 0.2 # 0.1 to 0.6
-        s_init = torch.rand((batch_size, 1), device=self.device) * 0.2 + 0.1 # 0.1 to 0.6
-        return torch.cat([x_init, s_init], dim=1)
+
+        x1_init, x2_init = self.hyperparam_config["plant"]["initial_state"]
+
+        if randomize:
+            # Randomization formula: nominal * (0.95 + 0.1 * rand) -> [0.95*nominal, 1.05*nominal)
+            x1_init = x1_init * (0.95 + 0.1 * torch.rand((batch_size, 1), device=self.device))
+            x2_init = x2_init * (0.95 + 0.1 * torch.rand((batch_size, 1), device=self.device))
+        else:
+            # Create tensors filled entirely with the nominal values
+            x1_init = torch.full((batch_size, 1), x1_init, device=self.device, dtype=torch.float32)
+            x2_init = torch.full((batch_size, 1), x2_init, device=self.device, dtype=torch.float32)
+        
+        x_init = torch.cat([x1_init, x2_init], dim=1)
+
+        # Ensure no negative values
+        return torch.clamp(x_init, min=0.0)
 
     def get_y(self, state, t=None):
         """Compute the observable plant output (specific growth rate :math:`\\mu`).
@@ -100,7 +104,7 @@ class ChemostatPlant:
         dsdt = u * (self.sR - s) - (mu * x / self.Y)
         return dxdt, dsdt
 
-    def step(self, state, u, t, dt):
+    def step(self, state, u, t):
         """Perform dynamic state integration using the Dormand-Prince (RK45) scheme.
 
         Advances the system state forward across time step ``dt`` using a 5th-order accurate 
@@ -118,6 +122,7 @@ class ChemostatPlant:
             ``(batch_size, 2)`` and observable output tensor of shape ``(batch_size, 1)``.
         :rtype: tuple[torch.Tensor, torch.Tensor]
         """
+        dt= self.dt
         x, s = state[:, 0:1], state[:, 1:2]
         
         # Butcher tableau coefficients for Dormand-Prince
@@ -166,8 +171,8 @@ class ChemostatPlant:
         return [
             {
                 "cols": ["x1", "x2"],
-                "labels": [r"$x_1$ [$\mathrm{g}\,\mathrm{L}^{-1}$]", r"$x_2$ [$\mathrm{g}\,\mathrm{L}^{-1}$]"],
-                "ylabel": [r"$x_1$ [$\mathrm{g}\,\mathrm{L}^{-1}$]", r"$x_2$ [$\mathrm{g}\,\mathrm{L}^{-1}$]"]
+                "labels": [r"$x_1$ [$\mathrm{g}\cdot\mathrm{L}^{-1}$]", r"$x_2$ [$\mathrm{g}\cdot\mathrm{L}^{-1}$]"],
+                "ylabel": [r"$x_1$ [$\mathrm{g}\cdot\mathrm{L}^{-1}$]", r"$x_2$ [$\mathrm{g}\cdot\mathrm{L}^{-1}$]"]
             },
             {
                 "cols": ["y"],
@@ -176,70 +181,37 @@ class ChemostatPlant:
             },
             {
                 "cols": ["u"],
-                "labels": [r"$u$ [$\mathrm{L}\,\mathrm{h}^{-1}$]"],
-                "ylabel": [r"$u$ [$\mathrm{L}\,\mathrm{h}^{-1}$]"]
+                "labels": [r"$u$ [$\mathrm{L}\cdot\mathrm{h}^{-1}$]"],
+                "ylabel": [r"$u$ [$\mathrm{L}\cdot\mathrm{h}^{-1}$]"]
             }
         ]
 
 # Default hyperparameter configuration 
 hyperparam_config_ChemostatPlant = {
+    # Plant model parameters
     "plant" :{
-        "mu-max": 0.5,      # Maximum growth rate [1/h]
-        "Ks": 0.2,          # Half-saturation constant 
-        "Y": 0.6,           # Yield coefficient
+        "mu_max": 0.5,                      # Maximum growth rate [1/h]
+        "Ks": 0.2,                          # Half-saturation constant 
+        "Y": 0.6,                           # Yield coefficient
         "sR": 1.0,
-        "input_dim": 1,     # number of plant outputs
-        "output_dim": 1,    # number of plant control inputs
-        "u_1_hard_min": 0.0,
-        "u_1_hard_max": 1,
 
-        "x_1_hard_min" : 0,
-        "x_2_hard_min" : None,
+        "initial_state": [
+                        0.3,                # Initial biomass concentration [g/L] 
+                        0.3                 # Initial substrate mass concentration [g/L]
+                        ]
+        },
 
-        "x_1_hard_min" : 0,
-        "x_2_hard_min" : None,
-
-        "y_1_hard_min": 0,
-        "y_1_hard_max": 0.5,
-
-        
-
-    },
-    "signal": {
-        
-        "dt": 0.1
-    },
-    "train": {
-        "k_folds": 2,
-        "epochs": 20,
-        "lr": 1e-3,
-        "device": "cuda", # if torch.cuda.is_available() else "cpu",
-        
-        "mini_batch_size": 1,
-        
-        
-        "loss_function": "MSELoss", 
-        "lr_decay_rate":1,
-        
-        "test_min_epochs": 3,
-        "test_min_delta": 0.0005,
-
-        "n_u": 2,
-        "n_y": 2,
-        "lookback_offset": 2,
-        "test_patience_epochs": 3,
-
-        
-    },
     "training_data_cfg" : {
-        "batch_size": 100,
-        "seq_len": 501,
-        "dt": 0.1,
-        "input_dim": 1,   # number of plant outputs
-        "output_dim": 1,   # number of plant control inputs,
-        "min_correlation_threshold": -10, #0.7,
-        "n_u": 2,
-        "n_y": 2,
+        "batch_size": 100,                  # Total number of sequences
+        "dt": 0.1,                          # Discrete time step
+        "seq_len": 501,                     # Sequence length    
+        
+        "input_dim": 1,                     # Number of plant control inputs
+        "output_dim": 1,                    # Number of plant outputs
+
+        "min_correlation_threshold": -10,   # Minimum value of Pearson's correlation coefficient between input and output
+        "nu_u": 2,
+        "nu_y": 2,
 
         "u_1_D_center_min": 0.15,
         "u_1_D_center_max": 0.2,
@@ -259,48 +231,76 @@ hyperparam_config_ChemostatPlant = {
         "u_1_lambd": 20,
         "u_1_p": 0.05,
     },
-    "mamba": {
-        "d_state": 1,
-        "expand": 1,
-        "d_conv" : 1
+
+    "train": {
+        "k_folds": 2,                       # Number of cross-validation folds
+        "epochs": 20,                       # Maximum number of epochs
+        "lr": 1e-3,                         # Maximum learning rate of Adam
+        "device": "cuda",                   # Device    
+        "mini_batch_size": 1,               # Number of sequences evaluated per epoch
+        
+        "loss_function": "MSELoss",         # Loss function        
+        "patience_epochs": 3,               # Patience epochs of stopping criterion
+        "patience_min_improvement": 0.0005, # Minimum test loss improvement for stopping criterion
+
+        "nu_u": 2,                          # Lookback index for the input 
+        "nu_y": 2,                          # Lookback index for the output
     },
 
+    # Default hyperparameters for Mamba-based sequence models
+    "mamba": {
+        "d_state": 16,                      
+        "expand": 4,
+        "d_conv" : 2
+    },
+    # Hyperparameter space of the Mamba sequence model for hyperparameter tuning via Optuna
     "mamba_param_space" : {
         "mamba.d_conv":  {"type": "int", "low": 1, "high": 10},
         "mamba.d_state": {"type": "int", "low": 1, "high": 64},
         "mamba.expand":  {"type": "int", "low": 1, "high": 10},
         },
-
+    # Default hyperparameters for LSTM-based sequence model
     "lstm": {
         "hidden_size": 64,
         "num_layers": 2,
         "dropout": 0.1,
     },
+    # Hyperparameter space of the LSTM sequence model for hyperparameter tuning via Optuna
     "lstm_param_space" : {
         "lstm.hidden_size": {"type": "int", "low": 16, "high": 128},
         "lstm.num_layers": {"type": "int", "low": 1, "high": 4},
         "lstm.dropout": {"type": "float", "low": 0.0, "high": 0.5},
     },
+    # Default hyperparameters for Transformer-based sequence model 
     "transformer": {
                     "nhead" : 2,
                     "num_layers" : 6,
                     "dim_feedforward" : 256,
                     "max_seq_len" : 2000
                 },
-                    
+    # Hyperparameter space of the Transformer sequence model for hyperparameter tuning via Optuna                
     "transformer_param_space":  {
         "transformer.nhead":           {"type": "categorical", "choices": [1, 2, 3]}, # Must divide d_model
         "transformer.num_layers":      {"type": "int", "low": 1, "high": 4},
         "transformer.dim_feedforward": {"type": "categorical", "choices": [64, 128, 256]},
         },
+    # Default hyperparameters for ESN-based sequence model 
     "esn": {
         "units": 200,   
         "lr": 0.5,
         "sr": 0.9,
         "ridge": 1e-7,    # Regularization coefficient  
     },
-    "simulate": {
+
+    "validation_trajectories" : {
         "batch_size": 10,
-        "seq_len": 401,
-    }
+        "seq_len"   : 401,
+        "set_point" : 0.25,
+        "amplitude" : 0.04,
+        "period"    : 20.0,
+
+        "y_start"   : 0.5,
+        "y_target"  : 0.2,
+        "tau"       : 0.1         
+    },
 }

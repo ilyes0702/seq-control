@@ -20,21 +20,22 @@ class IdiophasePlant:
         :type hyperparam_config: dict
         """
         self.device = hyperparam_config["train"]["device"]
-        self.dt = hyperparam_config["signal"]["dt"]
+        self.dt = hyperparam_config["training_data_cfg"]["dt"]
+        self.hyperparam_config = hyperparam_config
 
         # Biological and Plant Parameters from Context
-        self.mu_max = torch.tensor(hyperparam_config["plant"]["mu_max"], device=self.device) # e.g., 0.12
-        self.Ks = torch.tensor(hyperparam_config["plant"]["Ks"], device=self.device)         # e.g., 50
-        self.p1 = torch.tensor(hyperparam_config["plant"]["p1"], device=self.device)         # e.g., 0.00047
-        self.p2 = torch.tensor(hyperparam_config["plant"]["p2"], device=self.device)         # e.g., 200000
-        self.p5 = torch.tensor(hyperparam_config["plant"]["p5"], device=self.device)         # e.g., 0.9
-        self.p6 = torch.tensor(hyperparam_config["plant"]["p6"], device=self.device)         # e.g., 100
-        self.p7 = torch.tensor(hyperparam_config["plant"]["p7"], device=self.device)         # e.g., 0.04
-        self.q = torch.tensor(hyperparam_config["plant"]["q"], device=self.device)           # e.g., 2000
-        self.mu_Pen = torch.tensor(hyperparam_config["plant"]["mu_Pen"], device=self.device) # e.g., 3
+        self.mu_max = torch.tensor(hyperparam_config["plant"]["mu_max"], device=self.device) 
+        self.Ks = torch.tensor(hyperparam_config["plant"]["Ks"], device=self.device)         
+        self.p1 = torch.tensor(hyperparam_config["plant"]["p1"], device=self.device)         
+        self.p2 = torch.tensor(hyperparam_config["plant"]["p2"], device=self.device)         
+        self.p5 = torch.tensor(hyperparam_config["plant"]["p5"], device=self.device)         
+        self.p6 = torch.tensor(hyperparam_config["plant"]["p6"], device=self.device)         
+        self.p7 = torch.tensor(hyperparam_config["plant"]["p7"], device=self.device)         
+        self.q = torch.tensor(hyperparam_config["plant"]["q"], device=self.device)           
+        self.mu_Pen = torch.tensor(hyperparam_config["plant"]["mu_Pen"], device=self.device) 
         self.m_S = torch.tensor(hyperparam_config["plant"]["m_S"], device=self.device)
 
-        self.hyperparam_config = hyperparam_config
+        
 
         # Fixed volume for Idiophase if specified as constant
         self.V_const = torch.tensor(hyperparam_config["plant"].get("V_idiophase", 170.0), device=self.device)
@@ -51,7 +52,7 @@ class IdiophasePlant:
             return torch.full_like(t, self.V_const, device=self.device)
         return self.V_const
 
-    def get_initial_state(self, batch_size):
+    def get_initial_state(self, batch_size, randomize=True):
         """Construct initial state tensor for a batch of simulation instances.
 
         :param batch_size: Number of parallel simulation trajectories.
@@ -59,12 +60,27 @@ class IdiophasePlant:
         :returns: Initial state tensor of shape ``(batch_size, 4)``.
         :rtype: torch.Tensor
         """
-        x1_init = torch.full((batch_size, 1), self.hyperparam_config["plant"]["x10"], device=self.device)
-        x2_init = torch.full((batch_size, 1), self.hyperparam_config["plant"]["x20"], device=self.device)
-        x3_init = torch.full((batch_size, 1), self.hyperparam_config["plant"]["x30"], device=self.device)
-        x4_init = torch.full((batch_size, 1), self.hyperparam_config["plant"]["x40"], device=self.device)
+        x1_init, x2_init, x3_init, x4_init  = self.hyperparam_config["plant"]["initial_state"]
 
-        return torch.cat([x1_init, x2_init, x3_init, x4_init], dim=1)
+        if randomize:
+            # Randomization formula: nominal * (0.95 + 0.1 * rand) -> [0.95*nominal, 1.05*nominal)
+            x1_init = x1_init * (0.95 + 0.1 * torch.rand((batch_size, 1), device=self.device))
+            x2_init = x2_init * (0.95 + 0.1 * torch.rand((batch_size, 1), device=self.device))
+            x3_init = x3_init * (0.95 + 0.1 * torch.rand((batch_size, 1), device=self.device))
+            x4_init = x4_init * (0.95 + 0.1 * torch.rand((batch_size, 1), device=self.device))            
+        else:
+            # Create tensors filled entirely with the nominal values
+            x1_init = torch.full((batch_size, 1), x1_init, device=self.device, dtype=torch.float32)
+            x2_init = torch.full((batch_size, 1), x2_init, device=self.device, dtype=torch.float32)
+            x3_init = torch.full((batch_size, 1), x3_init, device=self.device, dtype=torch.float32)
+            x4_init = torch.full((batch_size, 1), x4_init, device=self.device, dtype=torch.float32)
+            
+            
+        x_init = torch.cat([x1_init, x2_init, x3_init, x4_init], 
+                        dim=1)
+
+        # Ensure no negative values
+        return torch.clamp(x_init, min=0.0)
 
     def get_y(self, state, t):
         """Calculate 2-dimensional MIMO tracking output vector y = [y1, y2].
@@ -123,7 +139,7 @@ class IdiophasePlant:
 
         return dx1dt, dx2dt, dx3dt, dx4dt
 
-    def step(self, state, u, t, dt=None):
+    def step(self, state, u, t):
         """Perform dynamic state integration using the Dormand-Prince (RK45) scheme.
 
         Advances the 4-state idiophase system forward across time step ``dt`` using 
@@ -141,8 +157,7 @@ class IdiophasePlant:
             ``(batch_size, 4)`` and observable output tensor of shape ``(batch_size, 2)``.
         :rtype: tuple[torch.Tensor, torch.Tensor]
         """
-        if dt is None:
-            dt = self.dt
+        dt = self.dt
 
         # Unpack state tensor components
         x1, x2, x3, x4 = state[:, 0:1], state[:, 1:2], state[:, 2:3], state[:, 3:4]
@@ -222,214 +237,159 @@ class IdiophasePlant:
                 "cols": ["y1", "y2"],
                 "labels": [
                     r"$y_1$ [$\mathrm{h}^{-1}$]", 
-                    r"$y_2$ [$\mathrm{g}\,\mathrm{L}^{-1}$]"
+                    r"$y_2$ [$\mathrm{g}\cdot\mathrm{L}^{-1}$]"
                 ],
                 "ylabel": [
                     r"$y_1$ [$\mathrm{h}^{-1}$]", 
-                    r"$y_2$ [$\mathrm{g}\,\mathrm{L}^{-1}$]"
+                    r"$y_2$ [$\mathrm{g}\cdot\mathrm{L}^{-1}$]"
                 ]
             },
             {
                 "cols": ["u1", "u2"],
                 "labels": [
-                    r"$u_1$ [$\mathrm{L}\,\mathrm{h}^{-1}$]", 
-                    r"$u_2$ [$\mathrm{L}\,\mathrm{h}^{-1}$]"
+                    r"$u_1$ [$\mathrm{L}\cdot\mathrm{h}^{-1}$]", 
+                    r"$u_2$ [$\mathrm{L}\cdot\mathrm{h}^{-1}$]"
                 ],
                 "ylabel": [
-                    r"$u_1$ [$\mathrm{L}\,\mathrm{h}^{-1}$]", 
-                    r"$u_2$ [$\mathrm{L}\,\mathrm{h}^{-1}$]"
+                    r"$u_1$ [$\mathrm{L}\cdot\mathrm{h}^{-1}$]", 
+                    r"$u_2$ [$\mathrm{L}\cdot\mathrm{h}^{-1}$]"
                 ]
             }
         ]
 
 # Default hyperparameter configuration
 hyperparam_config_IdiophasePlant = {
-        "signal": {
-            "seq_len": 2001,
-            "dt": 0.01,
-            #/ 🕹️ Channel 1 Signal Parameters (e.g., highly dynamic)
-            "u_1_lambd": 4,        
-            "u_1_p": 0.5,            
-            
-            #// 🕹️ Channel 2 Signal Parameters (e.g., highly filtered, slow moving)
-            "u_2_lambd": 4,        
-            "u_2_p": 0.5,
+    "plant": {
+        # Source of model parameters: Rothfuß, R. (1997). Anwendung der flachheitsbasierten Analyse und Regelung nichtlinearer Mehrgrößensysteme (Als Ms. gedr). VDI-Verl.
+        "mu_max": 0.12,             # Maximum growth rate [1/h]
+        "Ks": 50.0,                 # Affinity constant [(mg S)/L]
+        "p1": 0.00047,              # Yield coefficient of substrate [(g TS)/(mg S)]
+        "p2": 200000.0,             # Feed concentration of substrate [(mg S)/L]
+        "p5": 0.9,                  # Yield coefficient of penicillin [(g TS)/(mg S)]
+        "p6": 100.0,                # Feed concentration of precursor [(g Paa)/L]
+        "p7": 0.04,                 # Rate of hydrolysis [1/h]
+        "q": 2000.0,                # Yield coefficient of precursor [(mg Pen)/(g Paa)]
+        "mu_Pen": 3.0,              # Rate of product formation [(mg Pen)/(g TS h)]
+        "V_idiophase": 170.0,       # Volume [L]
+        "m_S": 23,                  # Maintenance coefficient [(mg S)/(g TS h)]
+
+        "initial_state" : [1500, 
+                           2000, 
+                           25, 
+                           1600]
+        },  
+
+    "training_data_cfg" : {
+        "batch_size": 100,
+        "dt": 0.01,
+        "seq_len": 2001,
         
+        "input_dim": 2,         # Number of plant control inputs
+        "output_dim": 2,        # Number of plant outputs
+
+        "min_correlation_threshold": -1.1,  # Minimum value of Pearson's correlation coefficient between input and output
+
+        "nu_u": 2,
+        "nu_y": 2,
+
+        "u_1_D_center_min": 0.6,
+        "u_1_D_center_max": 0.9,
+
+        "u_1_hard_min": 0.0,
+        "u_1_hard_max": 1,
+
+        "x_1_hard_min": 0,
+        "x_1_hard_max": None,
+
+        "y_1_hard_min": 0,
+        "y_1_hard_max": 0.12,            
+
+        "u_1_p" : 0.5,
+        "u_1_lambd" : 4,
+
+        "u_2_p" : 0.5,
+        "u_2_lambd" : 4,
+
+        "u_2_D_center_min": 0.0,
+        "u_2_D_center_max": 0.5,
+
+        "u_2_hard_min": 0.0,
+        "u_2_hard_max": 1,
+    },
+
+    "train": {
+        "k_folds": 5,
+        "epochs": 50,
+        "lr": 1e-3,
+        "device": "cuda",
+        "mini_batch_size": 1,
+        
+        "loss_function": "MSELoss()",
+        "patience_epochs": 3,
+        "patience_min_improvement": 0.00001,
+
+        "nu_u": 2,
+        "nu_y": 2,            
+    },
+        
+        
+    # Default hyperparameters for Mamba-based sequence models
+    "mamba": {
+            "d_state": 16,                      
+            "expand": 4,
+            "d_conv" : 2
         },
-        "train": {
-            "batch_size": 1000,
-            "device": "cuda",
-            "delay_steps": 1,
-            "epochs": 50,
-            "lr": 1e-3,
-            "loss_function": "MSELoss()",
-            "k_folds": 5,
-            "lr_decay_rate":1,
-            "min_correlation_threshold": -1.1,
-            "n_y": 2,
-            "n_u": 2,
-            "lookback_offset": 100,
-            "test_min_epochs": 3,
-            "test_min_delta": 0.00001,
-            "test_patience_epochs": 3,
-            "mini_batch_size": 1
-        },
-        "plant": {
-            "mu_max": 0.12,
-            "Ks": 50.0,
-            "p1": 0.00047,
-            "p2": 200000.0,
-            "p5": 0.9,
-            "p6": 100.0,
-            "p7": 0.04,
-            "q": 2000.0,
-            "mu_Pen": 3.0,
-            "V_idiophase": 170.0,
-            "m_S": 23,
-
-            "x10": 1500,
-            "x20": 2000,
-            "x30": 25,
-            "x40": 1600,
-
-            "x_1_hard_min": 0.0,
-            "x_1_hard_max": None,
-
-            "x_2_hard_min": 0.0,
-            "x_2_hard_max": None,
-
-            "x_3_hard_min": 0.0,
-            "x_3_hard_max": None,
-
-            "x_4_hard_min": 0.0,
-            "x_4_hard_max": None,
-            
-            "u_1_hard_min": 0.0,
-            "u_1_hard_max": 1.0,
-
-            "u_2_hard_min": 0.0,
-            "u_2_hard_max": 1.0,
-
-            "y_1_hard_min": 0.0,
-            "y_1_hard_max": 0.12,
-
-            "y_2_hard_min": 0.0,
-            "y_2_hard_max": None,
-
-            "u_1_D_center_min": 0.6,
-            "u_1_D_center_max": 0.9,
-
-            "u_2_D_center_min": 0.0,
-            "u_2_D_center_max": 0.5,
-
-            
-            "input_dim": 2,  # y1, y2
-            "output_dim": 2  # u1, u2
-        },
-        "training_data_generation_config": {
-            "batch_size": 2000,
-            "seq_len":    2001,
-            "dt" : 0.01,
-            "input_dim": 2,  # y
-            "output_dim": 2,  # u
-            "min_correlation_threshold": -1.1,
-
-            "u_1_D_center_min": 0.6,
-            "u_1_D_center_max": 0.9,
-
-            "u_1_hard_min": 0.0,
-            "u_1_hard_max": 1,
-
-            "u_2_D_center_min": 0.0,
-            "u_2_D_center_max": 0.5,
-
-            "u_2_hard_min": 0.0,
-            "u_2_hard_max": 1,
-
-            "x_1_hard_min": 0,
-            "x_1_hard_max": None,
-
-            "y_1_hard_min": 0,
-            "y_1_hard_max": 0.12,
-
-            "u_1_p" : 0.5,
-            "u_1_lambd" : 4,
-
-            "u_2_p" : 0.5,
-            "u_2_lambd" : 4,            
-        },
-        "training_data_cfg" : {
-            "batch_size": 100,
-            "seq_len": 2001,
-            "dt": 0.01,
-            "min_correlation_threshold": -1.1,
-            "delay_steps": 1,
-            "n_u": 2,
-            "n_y": 2,
-
-            "u_1_D_center_min": 0.6,
-            "u_1_D_center_max": 0.9,
-
-            "u_1_hard_min": 0.0,
-            "u_1_hard_max": 1,
-
-            "x_1_hard_min": 0,
-            "x_1_hard_max": None,
-
-            "y_1_hard_min": 0,
-            "y_1_hard_max": 0.12,
-
-            "input_dim": 2,  # y
-            "output_dim": 2,  # u
-
-            "u_1_p" : 0.5,
-            "u_1_lambd" : 4,
-
-            "u_2_p" : 0.5,
-            "u_2_lambd" : 4,
-
-            "u_2_D_center_min": 0.0,
-            "u_2_D_center_max": 0.5,
-
-            "u_2_hard_min": 0.0,
-            "u_2_hard_max": 1,
-        },
-        "mamba": {
-                "d_state": 1,
-                "expand": 1,
-                "d_conv" : 1
+    # Hyperparameter space of the Mamba sequence model for hyperparameter tuning via Optuna
+    "mamba_param_space" : {
+            "mamba.d_conv":  {"type": "int", "low": 1, "high": 10},
+            "mamba.d_state": {"type": "int", "low": 1, "high": 64},
+            "mamba.expand":  {"type": "int", "low": 1, "high": 10},
             },
-        "lstm": {
-                "hidden_size": 64,
-                "num_layers": 2,
-                "dropout": 0.1,
-            },
-        "lstm_param_space" : {
+
+    # Default hyperparameters for LSTM-based sequence model
+    "lstm": {
+            "hidden_size": 64,
+            "num_layers": 2,
+            "dropout": 0.1,
+        },
+    # Hyperparameter space of the LSTM sequence model for hyperparameter tuning via Optuna
+    "lstm_param_space" : {
             "lstm.hidden_size": {"type": "int", "low": 16, "high": 128},
             "lstm.num_layers": {"type": "int", "low": 1, "high": 4},
             "lstm.dropout": {"type": "float", "low": 0.0, "high": 0.5},
         },
-        "transformer": {
-                "nhead" : 2,
-                "num_layers" : 6,
-                "dim_feedforward" : 256,
-                "max_seq_len" : 2000
-            },
-                
-        "transformer_param_space":  {
-            "transformer.nhead":           {"type": "categorical", "choices": [1, 2, 3]}, # Must divide d_model
-            "transformer.num_layers":      {"type": "int", "low": 1, "high": 4},
-            "transformer.dim_feedforward": {"type": "categorical", "choices": [64, 128, 256]},
-            },
 
-        "esn": {
-                    "units": 200,   
-                    "lr": 0.5,
-                    "sr": 0.9,
-                    "ridge": 1e-7,    # Regularization coefficient  
+    # Default hyperparameters for Transformer-based sequence model 
+    "transformer": {
+                    "nhead" : 2,
+                    "num_layers" : 6,
+                    "dim_feedforward" : 256,
+                    "max_seq_len" : 2000
                 },
-        "simulate": {
-            "batch_size": 10,
-            "seq_len": 2001,
-        }
+    # Hyperparameter space of the Transformer sequence model for hyperparameter tuning via Optuna                
+    "transformer_param_space":  {
+        "transformer.nhead":           {"type": "categorical", "choices": [1, 2, 3]}, # Must divide d_model
+        "transformer.num_layers":      {"type": "int", "low": 1, "high": 4},
+        "transformer.dim_feedforward": {"type": "categorical", "choices": [64, 128, 256]},
+        },
+
+    # Default hyperparameters for ESN-based sequence model 
+    "esn": {
+        "units": 200,   
+        "lr": 0.5,
+        "sr": 0.9,
+        "ridge": 1e-7,    # Regularization coefficient  
+    },
+
+    "validation_trajectories" : {
+        "batch_size": 10,
+        "seq_len"   : 401,
+        "set_point" : 0.25,
+        "amplitude" : 0.04,
+        "period"    : 20.0,
+
+        "y_start"   : 0.5,
+        "y_target"  : 0.2,
+        "tau"       : 0.1         
+    },
     }

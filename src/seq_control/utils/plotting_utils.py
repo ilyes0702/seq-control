@@ -275,7 +275,9 @@ def plot_signals(
     image = Image.open(buf)
     
     # Process custom external tracking image storage
-    save_plot_image(image=image, filename=filename, dirname=dirname)
+    save_plot_image(image=image, 
+                    filename=filename, 
+                    dirname=dirname)
     
     return image
 
@@ -415,19 +417,18 @@ def plot_all_signals_overlay(
     if xlim is not None:
         axes[-1].set_xlim(xlim)
 
-    plt.tight_layout()
+    buf = BytesIO()
+    plt.savefig(buf, format="PNG", dpi=600)
+    buf.seek(0)
+    plt.close()
+
+    # Convert the memory stream into an editable PIL Image representation
+    image = Image.open(buf)
 
     # Save to disk
-    os.makedirs(dirname, exist_ok=True)
-    save_path = os.path.join(dirname, filename)
-    plt.savefig(save_path, dpi=300, bbox_inches="tight")
-
-    if show_plot:
-        plt.show()
-    else:
-        plt.close(fig)
-
-    print(f"🖼️ Stacked overlay plot saved to: {save_path}")
+    save_plot_image(image=image, 
+                    filename=filename, 
+                    dirname=dirname)
 
 
 def plot_param_heatmap(
@@ -982,7 +983,9 @@ def plot_stacked(
     plt.close(fig)
 
     image = Image.open(buf)
-    if "save_plot_image" in globals():
-        save_plot_image(image=image, filename=filename, dirname=dirname)
+
+    save_plot_image(image=image, 
+                    filename=filename, 
+                    dirname=dirname)
 
     return image

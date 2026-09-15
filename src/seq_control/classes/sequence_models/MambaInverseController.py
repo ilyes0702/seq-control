@@ -4,33 +4,29 @@ import torch.nn as nn
 from mamba_ssm import Mamba
 
 class MambaInverseController(nn.Module):
-    def __init__(self, hyperparam_config, feature_dim=None):
+    def __init__(self, hyperparam_config):
         """
         Mamba Inverse Controller supporting arbitrary sliding window inputs.
         
         Parameters:
         - hyperparam_config: Dictionary containing model architecture settings.
-        - feature_dim: (Optional) Explicit dimension of vector v_k. 
-                       If not provided, it will be calculated from n_y, n_u, and plant dimensions.
         """
         super().__init__()
         
         # 1. Extract dynamic MIMO dimensions
-        self.input_dim = hyperparam_config["plant"]["input_dim"]  
-        self.output_dim = hyperparam_config["plant"]["output_dim"] 
+        self.input_dim = hyperparam_config["training_data_cfg"]["input_dim"]  
+        self.output_dim = hyperparam_config["training_data_cfg"]["output_dim"] 
         self.d_state = hyperparam_config["mamba"]["d_state"]
         self.expand = hyperparam_config["mamba"]["expand"]
         self.d_conv = hyperparam_config["mamba"]["d_conv"]
         
         # 2. Compute dynamic input dimension based on sliding window sizes
-        if feature_dim is not None:
-            self.d_model = feature_dim
-        else:
-            n_y = hyperparam_config["train"]["n_y"]
-            n_u = hyperparam_config["train"]["n_u"]
-            # v_k = [y_{k+1}, y_k ... y_{k-n_y}, u_{k-1} ... u_{k-n_u}]
-            
-            self.d_model = n_u * self.input_dim + (n_y+2) * self.output_dim
+        print(hyperparam_config["training_data_cfg"])
+        nu_y = hyperparam_config["training_data_cfg"]["nu_y"]
+        nu_u = hyperparam_config["training_data_cfg"]["nu_u"]
+        # v_k = [y_{k+1}, y_k ... y_{k-nu_y}, u_{k-1} ... u_{k-nu_u}]
+        
+        self.d_model = nu_u * self.input_dim + (nu_y+2) * self.output_dim
         
         print(f"🛠️ Initializing Mamba core with d_model (feature_dim) = {self.d_model}")
         
@@ -136,7 +132,7 @@ class MambaSurrogateModel(nn.Module):
         Parameters:
         - hyperparam_config: Dictionary containing model architecture settings.
         - feature_dim: (Optional) Explicit dimension of vector v_k. 
-                       If not provided, it will be calculated from n_y, n_u, and plant dimensions.
+                       If not provided, it will be calculated from nu_y, nu_u, and plant dimensions.
         """
         super().__init__()
         
@@ -151,11 +147,11 @@ class MambaSurrogateModel(nn.Module):
         if feature_dim is not None:
             self.d_model = feature_dim
         else:
-            n_y = hyperparam_config["train"]["n_y"]
-            n_u = hyperparam_config["train"]["n_u"]
-            # v_k = [y_{k+1}, y_k ... y_{k-n_y}, u_{k-1} ... u_{k-n_u}]
+            nu_y = hyperparam_config["train"]["nu_y"]
+            nu_u = hyperparam_config["train"]["nu_u"]
+            # v_k = [y_{k+1}, y_k ... y_{k-nu_y}, u_{k-1} ... u_{k-nu_u}]
             
-            self.d_model = (n_u+1) * self.input_dim + (n_y+1) * self.output_dim
+            self.d_model = (nu_u+1) * self.input_dim + (nu_y+1) * self.output_dim
         
         print(f"🛠️ Initializing Mamba core with d_model (feature_dim) = {self.d_model}")
         
@@ -328,8 +324,8 @@ class MambaGradientMPC:
         surrogate_model: nn.Module,
         scaler_x=None,
         scaler_y=None,
-        n_y: int = 1,
-        n_u: int = 1,
+        nu_y: int = 1,
+        nu_u: int = 1,
         horizon: int = 15,
         num_iters: int = 20,
         lr: float = 0.03,
@@ -344,8 +340,8 @@ class MambaGradientMPC:
         self.model = surrogate_model.to(self.device)
         self.model.eval()  # Freeze surrogate model layers (disable dropout/batchnorm updates)
 
-        self.n_y = n_y
-        self.n_u = n_u
+        self.nu_y = nu_y
+        self.nu_u = nu_u
         self.H = horizon
         self.num_iters = num_iters
         self.lr = lr
@@ -412,9 +408,9 @@ class MambaGradientMPC:
             y_preds.append(y_next)
 
             # Construct next feature frame v_{k+1} by shifting history window
-            # Assuming feature vector structure: [y_{k-n_y+1}...y_k, u_{k-n_u+1}...u_k]
-            y_hist_prev = curr_history[:, -1, : (self.n_y * d_y)]
-            u_hist_prev = curr_history[:, -1, (self.n_y * d_y) :]
+            # Assuming feature vector structure: [y_{k-nu_y+1}...y_k, u_{k-nu_u+1}...u_k]
+            y_hist_prev = curr_history[:, -1, : (self.nu_y * d_y)]
+            u_hist_prev = curr_history[:, -1, (self.nu_y * d_y) :]
 
             # Shift output history window
             y_hist_new = torch.cat([y_hist_prev[:, d_y:], y_next.squeeze(1)], dim=-1)

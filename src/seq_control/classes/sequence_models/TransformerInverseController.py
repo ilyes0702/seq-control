@@ -9,13 +9,13 @@ class TransformerInverseController(nn.Module):
         Parameters:
         - hyperparam_config: Dictionary containing model architecture settings.
         - feature_dim: (Optional) Explicit dimension of vector v_k. 
-                       If not provided, calculated from n_y, n_u, and plant dimensions.
+                       If not provided, calculated from nu_y, nu_u, and plant dimensions.
         """
         super().__init__()
         
         # 1. Extract dynamic MIMO dimensions
-        self.input_dim = hyperparam_config["plant"]["input_dim"]   # Dimension of plant output y
-        self.output_dim = hyperparam_config["plant"]["output_dim"] # Dimension of plant control u
+        self.input_dim = hyperparam_config["training_data_cfg"]["input_dim"]   # Dimension of plant output y
+        self.output_dim = hyperparam_config["training_data_cfg"]["output_dim"] # Dimension of plant control u
         
         # Transformer-specific hyperparams with sensible fallbacks
         trans_cfg = hyperparam_config["transformer"]
@@ -28,9 +28,9 @@ class TransformerInverseController(nn.Module):
         if feature_dim is not None:
             self.d_model = feature_dim
         else:
-            n_y = hyperparam_config["train"]["n_y"]
-            n_u = hyperparam_config["train"]["n_u"]
-            self.d_model = n_u * self.input_dim + (n_y + 2) * self.output_dim
+            nu_y = hyperparam_config["train"]["nu_y"]
+            nu_u = hyperparam_config["train"]["nu_u"]
+            self.d_model = nu_u * self.input_dim + (nu_y + 2) * self.output_dim
             
         # Ensure d_model is divisible by nhead for MultiheadAttention
         if self.d_model % self.nhead != 0:

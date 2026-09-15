@@ -48,11 +48,11 @@ def train_sequence_model(
     lr = train_cfg["lr"]
     epochs = train_cfg["epochs"]
     mini_batch_size = train_cfg["mini_batch_size"]
-    test_patience = train_cfg["test_patience_epochs"]
-    test_min_delta = train_cfg["test_min_delta"]
+    test_patience = train_cfg["patience_epochs"]
+    patience_min_improvement = train_cfg["patience_min_improvement"]
 
-    input_dim = plant_cfg["input_dim"]
-    output_dim = plant_cfg["output_dim"]
+    input_dim = training_data_cfg["input_dim"]
+    output_dim = training_data_cfg["output_dim"]
 
     X_raw = sw_dataset["X_raw"]
     Y_raw = sw_dataset["Y_raw"]
@@ -246,7 +246,7 @@ def train_sequence_model(
             print(f"✨ [Fold {fold+1}] Epoch {epoch+1} Summary:")
             print(f"   ↳ LR: {current_lr:.6e} | Total Train Loss: {mean_train_loss:.6f} | Total Test Loss: {mean_test_loss:.6f}")
 
-            if mean_test_loss < (best_test_loss - test_min_delta):
+            if mean_test_loss < (best_test_loss - patience_min_improvement):
                 best_test_loss = mean_test_loss
                 patience_counter = 0
                 save_model(model, 
@@ -408,8 +408,8 @@ def train_full_dataset(model,
     train_cfg = hyperparam_config["train"]
     lr = train_cfg["lr"]
     epochs = train_cfg["epochs"]
-    n_y = train_cfg["n_y"]
-    n_u = train_cfg["n_u"]
+    nu_y = train_cfg["nu_y"]
+    nu_u = train_cfg["nu_u"]
     batch_size = train_cfg["mini_batch_size"]
     
     plant_cfg = hyperparam_config["plant"]

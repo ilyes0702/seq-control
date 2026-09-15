@@ -21,7 +21,7 @@ class IndForProteinProductionPlant:
         """
         self.hyperparam_config = hyperparam_config
         self.device = hyperparam_config["train"]["device"]
-        self.dt = hyperparam_config["signal"]["dt"]
+        self.dt = hyperparam_config["training_data_cfg"]["dt"]
 
         # Constants and parameters from plant model definition
         self.mu_max = torch.tensor(hyperparam_config["plant"]["mu_max"], device=self.device)
@@ -40,7 +40,7 @@ class IndForProteinProductionPlant:
         self.K_I = torch.tensor(hyperparam_config["plant"]["K_I"], device=self.device)
         self.C_i_f = torch.tensor(hyperparam_config["plant"]["C_i_f"], device=self.device)
 
-    def get_initial_state(self, batch_size):
+    def get_initial_state(self, batch_size, randomize=True):
         """Construct initial state tensor across a batch of simulation trajectories.
 
         State components vector layout:
@@ -51,15 +51,36 @@ class IndForProteinProductionPlant:
         :returns: Initial state tensor of shape ``(batch_size, 7)``.
         :rtype: torch.Tensor
         """
-        x1_init = self.hyperparam_config["plant"]["x10"] * torch.ones((batch_size, 1), device=self.device)
-        x2_init = self.hyperparam_config["plant"]["x20"] * torch.ones((batch_size, 1), device=self.device)
-        x3_init = self.hyperparam_config["plant"]["x30"] * torch.ones((batch_size, 1), device=self.device)
-        x4_init = self.hyperparam_config["plant"]["x40"] * torch.ones((batch_size, 1), device=self.device)
-        x5_init = self.hyperparam_config["plant"]["x50"] * torch.ones((batch_size, 1), device=self.device)
-        x6_init = self.hyperparam_config["plant"]["x60"] * torch.ones((batch_size, 1), device=self.device)
-        x7_init = self.hyperparam_config["plant"]["x70"] * torch.ones((batch_size, 1), device=self.device)
 
-        return torch.cat([x1_init, x2_init, x3_init, x4_init, x5_init, x6_init, x7_init], dim=1)
+        x1_init, x2_init, x3_init, x4_init, x5_init, x6_init, x7_init = self.hyperparam_config["plant"]["initial_state"]    
+
+
+        if randomize:
+            # Randomization formula: nominal * (0.95 + 0.1 * rand) -> [0.95*nominal, 1.05*nominal)
+            x1_init = x1_init * (0.95 + 0.1 * torch.rand((batch_size, 1), device=self.device))
+            x2_init = x2_init * (0.95 + 0.1 * torch.rand((batch_size, 1), device=self.device))
+            x3_init = x3_init * (0.95 + 0.1 * torch.rand((batch_size, 1), device=self.device))
+            x4_init = x4_init * (0.95 + 0.1 * torch.rand((batch_size, 1), device=self.device))
+            x5_init = x5_init * (0.95 + 0.1 * torch.rand((batch_size, 1), device=self.device))  
+            x6_init = x6_init * (0.95 + 0.1 * torch.rand((batch_size, 1), device=self.device))  
+            x7_init = x7_init * (0.95 + 0.1 * torch.rand((batch_size, 1), device=self.device))              
+        else:
+            # Create tensors filled entirely with the nominal values
+            x1_init = torch.full((batch_size, 1), x1_init, device=self.device, dtype=torch.float32)
+            x2_init = torch.full((batch_size, 1), x2_init, device=self.device, dtype=torch.float32)
+            x3_init = torch.full((batch_size, 1), x3_init, device=self.device, dtype=torch.float32)
+            x4_init = torch.full((batch_size, 1), x4_init, device=self.device, dtype=torch.float32)
+            x5_init = torch.full((batch_size, 1), x5_init, device=self.device)
+            x6_init = torch.full((batch_size, 1), x6_init, device=self.device)
+            x7_init = torch.full((batch_size, 1), x7_init, device=self.device)
+            
+            
+        x_init = torch.cat([x1_init, x2_init, x3_init, x4_init, x5_init, x6_init, x7_init], 
+                        dim=1)
+
+        # Ensure no negative values
+        return torch.clamp(x_init, min=0.0)
+        
 
     def get_y(self, state, t=None):
         """Extract monitored 3-dimensional controlled output vector y = [x1, x2, x4].
@@ -128,7 +149,7 @@ class IndForProteinProductionPlant:
 
         return dx1dt, dx2dt, dx3dt, dx4dt, dx5dt, dx6dt, dx7dt
 
-    def step(self, state, u, t, dt):
+    def step(self, state, u, t):
         """Advance simulation state across time horizon ``dt`` via vectorized adaptive RK45 integration.
 
         Integrates the 7-state continuous dynamic system over ``[t, t + dt]`` using a batch-parallel 
@@ -146,6 +167,7 @@ class IndForProteinProductionPlant:
             ``(batch_size, 7)`` and monitored output tensor of shape ``(batch_size, 3)``.
         :rtype: tuple[torch.Tensor, torch.Tensor]
         """
+        dt = self.dt
         batch_size = state.shape[0]
         device = state.device
         
@@ -265,99 +287,48 @@ class IndForProteinProductionPlant:
 # Default hyperparameter configuration
 hyperparam_config_IndForProteinProductionPlant = {
     "plant": {
-        # --- Kinematic & Yield Parameters (Lee & Ramirez Model) ---
-        "mu_max": 0.407,           # Maximum specific growth rate [1/h]
-        "K_CI": 0.22,              # Inducer inhibition/shock structural constant [g/L]
-        "k_22": 0.09,              # Deactivation rate coefficient for protein shock [1/h]
-        "K_s": 14814.8,            # Substrate inhibition constant multiplier [g/L]
+        # Source of model parameters: Lee, J., & Ramirez, W. F. (1994). Optimal fed‐batch control of induced foreign protein production by recombinant bacteria. AIChE Journal, 40(5), 899–907. https://doi.org/10.1002/aic.690400516
+        "mu_max": 0.407,            # Maximum specific growth rate [1/h]
+        "K_CI": 0.22,               # Inducer inhibition/shock structural constant [g/L]
+        "k_22": 0.09,               # Deactivation rate coefficient for protein shock [1/h]
+        "K_s": 14814.8,             # Substrate inhibition constant multiplier [g/L]
         "f_I_0": 0.0005,
-        "C_n_f": 100,
-        "Y": 0.51,
+        "C_n_f": 100,               # Nutrient level of feed [g/L]
+        "Y": 0.51,                  # Yield coefficient of substrate [(g cell mass)/(g nutrient)]
 
-        "K_CN": 0.108,             # Nitrogen/Nutrient saturation constant [g/L]
-        "k_11": 0.09,              # Deactivation rate coefficient for growth shock [1/h]
-        "K_IX": 0.034,             # Cell density impact factor on deactivation [g/L]
+        "K_CN": 0.108,              # Nitrogen/Nutrient saturation constant [g/L]
+        "k_11": 0.09,               # Deactivation rate coefficient for growth shock [1/h]
+        "K_IX": 0.034,              # Cell density impact factor on deactivation [g/L]
         
-        "f_max": 0.095,            # Max specific foreign protein production rate [1/h]
-        "K_IX": 0.034,             # Inducer activation affinity constant [g/L]   
-        
-        "f_max": 0.095,
-        "K_I": 0.022,
-        "C_i_f": 4,        
-        
-        
-        #"N": 100.0,               # Nutrient concentration in glucose feed stream [g/L]
-        #"I": 4.0,                 # Inducer concentration in activator feed stream [g/L]
-        #"Y": 0.5,                 # Biomass growth yield coefficient [g dry cells / g nutrient]
+        "f_max": 0.095,             # Max specific foreign protein production rate [1/h]
+        "K_IX": 0.034,              # Inducer activation affinity constant [g/L]   
 
-        # --- Actuator Flow Rate Bounds (2 Inputs: u_1 = Glucose Feed, u_2 = Inducer Feed) ---
-        "u_1_hard_min": 0.0,       # Glucose pump fully off [L/h]
-        "u_1_hard_max": 1.5,       # Max glucose volumetric flow capacity [L/h]
-        "u_2_hard_min": 0.0,       # Inducer pump fully off [L/h]
-        "u_2_hard_max": 0.5,       # Max inducer volumetric flow capacity [L/h]
+        "f_max": 0.095,             # Maximum protein production rate              
+        "K_I": 0.022,               # Constant    
+        "C_i_f": 4,                 # Inducer level of feed [g/L]
 
-        "u_1_D_center_min": 0.05,  # Operational envelope floors
-        "u_1_D_center_max": 0.80,
-        "u_2_D_center_min": 0.00,
-        "u_2_D_center_max": 0.25,
-
-        # --- State Trajectory Bounds (7 Dimensions) ---
-        "x_1_hard_min": 0.0,       # Minimum reactor heel volume to cover sensors [L]
-        "x_1_hard_max": None,      # Total structural capacity of the tank vessel [L]
-        "x_2_hard_min": 0.0,       # Biomass density floor [g/L]
-        "x_3_hard_min": 0.0,       # Nutrient limitation floor [g/L]
-        "x_4_hard_min": 0.0,       # Protein concentration floor [g/L]
-        "x_5_hard_min": 0.0,       # Inducer concentration floor [g/L]
-        "x_6_hard_min": 0.0,       # Shock factor boundary bounds
-        "x_6_hard_max": None,
-        "x_7_hard_min": 0.0,       # Recovery factor bounds
-        "x_7_hard_max": None,
-
-        "x10": 1,
-        "x20": 0.1,
-        "x30": 40,
-        "x40": 0,
-        "x50": 0,
-        "x60": 1,
-        "x70": 0,
-
-        # --- System Order Configurations ---
-        "input_dim": 2,            # Dim(u) = [u1, u2]
-        "output_dim": 3,           # Dim(y) = [x1, x2, x4]
+        "initial_state": [1,        # Initial reactor volume [L] 
+                          0.1,      # Inital concentration of biomass [g/L]
+                          40,       # Initial nutrient mass concentration [g/L]
+                          0,        # Initial foreign protein mass concentration [g/L]
+                          0,        # Initial inducer mass concentration [g/L]
+                          1,        # Initial shock rate effect [-]
+                          0         # Initial inducer recovery factor on cell growth rate [-]
+                          ],
     },
-    "signal": {
-        "lambd": 10,               # Signal filtering/noise properties
-        "p": 0.15,                 # Discontinuity probability factor
-        "seq_len": 1501,           # Length of sequential time-series paths
-        "dt": 0.01                 # Timestep integration window [h] (50 ms steps)
-    },
-    "train": {
-        "k_folds": 5,              # Cross-validation splits
-        "epochs": 150,             # Total training iterations
-        "batch_size": 1000,        # Number of batch elements
-        "lr": 1e-3,                # Base optimization learning rate
-        "device": "cuda",          # Core processing target execution context
-        "delay_steps": 5,          # Latency control parameter markers
-        "loss_function": "MSELoss()",
-        "lr_decay_rate": 1, # 0.98,     # Multiplicative factor per epoch decay
-        "min_correlation_threshold": -1.1,
-        "n_y": 1,
-        "n_u": 1,
-        "test_min_epochs": 3,
-        "test_min_delta": 0.0001,
-        "lookback_offset": 10,
-        "test_patience_epochs": 3,
-        "mini_batch_size": 1
-    },
+
+    # Training data generation
     "training_data_cfg": {        
-        "batch_size": 100,
-        "seq_len": 1501,
+        "batch_size": 100,          
         "dt": 0.01,
+        "seq_len": 1501,
+        
         "input_dim": 2,            
         "output_dim": 3,
+
         "min_correlation_threshold": -1.1,
-        "n_u": 1,
-        "n_y": 1,
+        "nu_u": 1,
+        "nu_y": 1,
 
         "u_1_D_center_min": 0.05,
         "u_1_D_center_max": 0.80,
@@ -393,48 +364,83 @@ hyperparam_config_IndForProteinProductionPlant = {
         
         "u_2_lambd": 4,
         "u_2_p": 0.5,
-         
-        
+                
     },
+
+    "train": {
+        "k_folds": 5,                               # Number of cross validation splits
+        "epochs": 100,                              # Maximum number of epochs
+        "lr": 1e-3,                                 # Learning rate of the Adam optimizer
+        "device": "cuda",                           # Core processing target execution context
+        "mini_batch_size": 1,                       # Number of training sequences per epoch
+
+        "loss_function": "MSELoss()",               # Loss function of the training process
+        "patience_epochs": 3,                       # Number of patience epochs for the stopping criterion
+        "patience_min_improvement": 0.0001,         # Minimum loss function improvement on the test set for stopping criterion
+
+        "nu_y": 1,                                  # Lookback window for outputs
+        "nu_u": 1,                                  # Lookback window for inputs
+    },
+    
+    # Default hyperparameters for Mamba-based sequence models
     "mamba": {
-        "d_state": 1,
-        "expand": 1,
-        "d_conv" : 1
+        "d_state": 31,
+        "expand": 9,
+        "d_conv": 9
     },
+
+    # Hyperparameter space of the Mamba sequence model for hyperparameter tuning via Optuna
+        "mamba_param_space" : {
+            "mamba.d_conv":  {"type": "int", "low": 1, "high": 10},
+            "mamba.d_state": {"type": "int", "low": 1, "high": 64},
+            "mamba.expand":  {"type": "int", "low": 1, "high": 10},
+            },
+
+    # Default hyperparameters for LSTM-based sequence model
     "lstm": {
-            "hidden_size": 64,
-            "num_layers": 2,
-            "dropout": 0.1,
-        },
+        "hidden_size": 64,
+        "num_layers": 2,
+        "dropout": 0.1,
+    },
+    # Hyperparameter space of the LSTM sequence model for hyperparameter tuning via Optuna
     "lstm_param_space" : {
         "lstm.hidden_size": {"type": "int", "low": 16, "high": 128},
         "lstm.num_layers": {"type": "int", "low": 1, "high": 4},
         "lstm.dropout": {"type": "float", "low": 0.0, "high": 0.5},
     },
 
+    # Default hyperparameters for Transformer-based sequence model 
     "transformer": {
-                    "nhead" : 1,
+                    "nhead" : 2,
                     "num_layers" : 6,
                     "dim_feedforward" : 256,
                     "max_seq_len" : 2000
                 },
-                    
+    # Hyperparameter space of the Transformer sequence model for hyperparameter tuning via Optuna                
     "transformer_param_space":  {
         "transformer.nhead":           {"type": "categorical", "choices": [1, 2, 3]}, # Must divide d_model
         "transformer.num_layers":      {"type": "int", "low": 1, "high": 4},
         "transformer.dim_feedforward": {"type": "categorical", "choices": [64, 128, 256]},
         },
-
+        
+    # Default hyperparameters for ESN-based sequence model 
     "esn": {
-                "units": 200,   
-                "lr": 0.5,
-                "sr": 0.9,
-                "ridge": 1e-7,    # Regularization coefficient  
-            },
-            
-    "simulate": {
-        "batch_size": 16,          # Validation trajectory evaluation batch scale
-        "seq_len": 3001            # Length of a full multi-day production run
-    }
+        "units": 200,   
+        "lr": 0.5,
+        "sr": 0.9,
+        "ridge": 1e-7,      
+    },
+
+    "validation_trajectories" : {
+            "batch_size": 10,
+            "seq_len"   : 401,
+            "set_point" : 0.25,
+            "amplitude" : 0.04,
+            "period"    : 20.0,
+    
+            "y_start"   : 0.5,
+            "y_target"  : 0.2,
+            "tau"       : 0.1         
+        }
 }
 

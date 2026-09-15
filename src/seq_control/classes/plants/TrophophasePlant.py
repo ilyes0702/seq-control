@@ -1,6 +1,5 @@
 import torch
 
-
 class TrophophasePlant:
     """Trophophase bioprocess plant simulation model.
 
@@ -72,19 +71,22 @@ class TrophophasePlant:
         :rtype: torch.Tensor
         """
         # Fetch nominal values from config
-        x1_nominal = self.hyperparam_config["plant"]["x10"]
-        x2_nominal = self.hyperparam_config["plant"]["x20"]
+        x1_init, x2_init = self.hyperparam_config["plant"]["initial_state"]
         
         if randomize:
             # Randomization formula: nominal * (0.95 + 0.1 * rand) -> [0.95*nominal, 1.05*nominal)
-            x1_values = x1_nominal * (0.95 + 0.1 * torch.rand((batch_size, 1), device=self.device))
-            x2_values = x2_nominal * (0.95 + 0.1 * torch.rand((batch_size, 1), device=self.device))
+            x1_init = x1_init * (0.95 + 0.1 * torch.rand((batch_size, 1), device=self.device))
+            x2_init = x2_init * (0.95 + 0.1 * torch.rand((batch_size, 1), device=self.device))
         else:
             # Create tensors filled entirely with the nominal values
-            x1_values = torch.full((batch_size, 1), x1_nominal, device=self.device, dtype=torch.float32)
-            x2_values = torch.full((batch_size, 1), x2_nominal, device=self.device, dtype=torch.float32)
+            x1_init = torch.full((batch_size, 1), x1_init, device=self.device, dtype=torch.float32)
+            x2_init = torch.full((batch_size, 1), x2_init, device=self.device, dtype=torch.float32)
             
-        return torch.cat([x1_values, x2_values], dim=1)
+        x_init = torch.cat([x1_init, x2_init], 
+                        dim=1)
+
+        # Ensure no negative values
+        return torch.clamp(x_init, min=0.0)
 
     def get_y(self, state, t):
         """Compute the observable plant output (specific growth rate :math:`\\mu`).
@@ -111,111 +113,6 @@ class TrophophasePlant:
         # Monod growth kinetics
         mu = (self.mu_max * c2) / (self.Ks + c2)
         return mu
-
-    def get_v_dot(self, t):
-        """Calculate the time derivative of reactor volume :math:`\\mathrm{d}V/\\mathrm{d}t`.
-
-        Evaluates rate of volume change using Heaviside step functions :math:`\\sigma(t)`:
-
-        .. math::
-            \\frac{\\mathrm{d}V}{\\mathrm{d}t} = 2\\sigma(t - 5) - 2\\sigma(t - 15)
-
-        :param t: Current simulation time or timestamp tensor.
-        :type t: float or int or torch.Tensor
-        :returns: Time derivative of volume :math:`\\mathrm{d}V/\\mathrm{d}t`.
-        :rtype: torch.Tensor
-        """
-        if not isinstance(t, torch.Tensor):
-            t = torch.tensor(t, device=self.device, dtype=torch.float32)
-        
-        # Heaviside step function: 1.0 if t >= threshold else 0.0
-        sigma1 = (t >= 5.0).to(torch.float32)
-        sigma2 = (t >= 15.0).to(torch.float32)
-        
-        return 2.0 * sigma1 - 2.0 * sigma2
-
-    def get_y_dot(self, state, u1, t):
-        """Calculate the first time derivative of specific growth rate :math:`\\mathrm{d}y/\\mathrm{d}t`.
-
-        Computes the rate of change of observable output :math:`y = \\mu(c_2)` using the chain rule:
-
-        .. math::
-            \\frac{\\mathrm{d}y}{\\mathrm{d}t} = \\frac{\\mathrm{d}y}{\\mathrm{d}c_2} \\cdot \\frac{\\mathrm{d}c_2}{\\mathrm{d}t}
-
-        :param state: Plant state tensor of shape ``(batch_size, 2)`` containing ``[x1, x2]``.
-        :type state: torch.Tensor
-        :param u1: Applied substrate feed control input tensor of shape ``(batch_size, 1)``.
-        :type u1: torch.Tensor
-        :param t: Current simulation time.
-        :type t: float or int or torch.Tensor
-        :returns: First derivative :math:`\\mathrm{d}y/\\mathrm{d}t` of shape ``(batch_size, 1)``.
-        :rtype: torch.Tensor
-        """
-        x1, x2 = state[:, 0:1], state[:, 1:2]
-        V = self.get_volume(t)
-        V_dot = self.get_v_dot(t)
-        
-        c2 = x2 / V
-        y = (self.mu_max * c2) / (self.Ks + c2)
-        
-        # System dynamics: dx2/dt
-        _, dx2dt = self.dynamics(x1, x2, u1, t)
-        
-        # dc2/dt
-        c2_dot = (dx2dt - c2 * V_dot) / V
-        
-        # dy/dc2
-        dy_dc2 = (self.mu_max * self.Ks) / ((self.Ks + c2) ** 2)
-        
-        y_dot = dy_dc2 * c2_dot
-        return y_dot
-
-    def get_y_ddot(self, state, u1, t, u1_dot=0.0):
-        """Calculate the second time derivative of specific growth rate :math:`\\mathrm{d}^2y/\\mathrm{d}t^2`.
-
-        Computes acceleration of observable output :math:`y = \\mu(c_2)` incorporating higher-order 
-        concentration derivatives and state trajectories.
-
-        :param state: Plant state tensor of shape ``(batch_size, 2)`` containing ``[x1, x2]``.
-        :type state: torch.Tensor
-        :param u1: Applied substrate feed control input tensor of shape ``(batch_size, 1)``.
-        :type u1: torch.Tensor
-        :param t: Current simulation time.
-        :type t: float or int or torch.Tensor
-        :param u1_dot: First time derivative of control input :math:`\\mathrm{d}u_1/\\mathrm{d}t`, defaults to 0.0.
-        :type u1_dot: float or torch.Tensor or int, optional
-        :returns: Second derivative :math:`\\mathrm{d}^2y/\\mathrm{d}t^2` of shape ``(batch_size, 1)``.
-        :rtype: torch.Tensor
-        """
-        x1, x2 = state[:, 0:1], state[:, 1:2]
-        V = self.get_volume(t)
-        V_dot = self.get_v_dot(t)
-        # V_ddot is 0 almost everywhere
-        V_ddot = 0.0 
-        
-        c2 = x2 / V
-        y = (self.mu_max * c2) / (self.Ks + c2)
-        
-        # First derivatives
-        dx1dt, dx2dt = self.dynamics(x1, x2, u1, t)
-        c2_dot = (dx2dt - c2 * V_dot) / V
-        
-        dy_dc2 = (self.mu_max * self.Ks) / ((self.Ks + c2) ** 2)
-        y_dot = dy_dc2 * c2_dot
-        
-        # Secondary derivatives for state equations
-        dx2dt_dot = -(1.0 / self.p1) * (y_dot * x1 + y * dx1dt) - self.m_S * dx1dt + self.p2 * u1_dot
-        
-        # d^2c2/dt^2
-        c2_ddot = (dx2dt_dot - 2.0 * c2_dot * V_dot - c2 * V_ddot) / V
-        
-        # d^2y/dc2^2
-        d2y_dc22 = -2.0 * (self.mu_max * self.Ks) / ((self.Ks + c2) ** 3)
-        
-        # d^2y/dt^2 = (dy/dc2)*c2_ddot + (d2y/dc22)*(c2_dot^2)
-        y_ddot = dy_dc2 * c2_ddot + d2y_dc22 * (c2_dot ** 2)
-        
-        return y_ddot
 
     def dynamics(self, x1, x2, u1, t):
         """Compute state derivative vector :math:`\\mathrm{d}x/\\mathrm{d}t` for the trophophase model.
@@ -249,7 +146,7 @@ class TrophophasePlant:
         dx2dt = -(1.0 / self.p1) * mu * x1 - self.m_S * x1 + self.p2 * u1
         return dx1dt, dx2dt
 
-    def step(self, state, u, t, dt):
+    def step(self, state, u, t):
         """Perform dynamic state integration using the Dormand-Prince (RK45) scheme.
 
         Advances the system state forward across time step ``dt`` using a 5th-order accurate 
@@ -267,6 +164,7 @@ class TrophophasePlant:
             ``(batch_size, 2)`` and observable output tensor of shape ``(batch_size, 1)``.
         :rtype: tuple[torch.Tensor, torch.Tensor]
         """
+        dt = self.dt
         x1, x2 = state[:, 0:1], state[:, 1:2]
         
         # k1 at t
@@ -338,39 +236,30 @@ class TrophophasePlant:
 # Default hyperparameter configuration
 hyperparam_config_TrophophasePlant = {
     "plant" :{
-        "mu_max": 0.12,
-        "Ks": 50,
-        "m_S": 23.0, 
-        "p1": 0.00047,
-        "p2": 200000.0,
+        # Source of model parameters: Rothfuß, R. (1997). Anwendung der flachheitsbasierten Analyse und Regelung nichtlinearer Mehrgrößensysteme (Als Ms. gedr). VDI-Verl.
+        "mu_max": 0.12,                 # Maximum growth rate [1/h]
+        "Ks": 50,                       # Affinity constant [(mg S)/L]
+        "m_S": 23.0,                    # Maintenance coefficient [(mg S)/(g TS h)]
+        "p1": 0.00047,                  # Yield coefficient of substrate [(g TS)/(mg S)]
+        "p2": 200000.0,                 # Feed concentration of substrate [(mg S)/L]
         
-        "u_1_D_center_min": 0.6,
-        "u_1_D_center_max": 0.9,
-
-        "u_1_hard_min": 0.0,
-        "u_1_hard_max": 1,
-
-        "x_1_hard_min": 0,
-        "x_1_hard_max": None,
-
-        "y_1_hard_min": 0,
-        "y_1_hard_max": 0.12,
-
-        "x10": 1500.0,   #wenn trainiert mit 1500 aber getesttet mit 1600, gute performnce
-        "x20": 2000.0,
-
-        "input_dim": 1,  # y
-        "output_dim": 1  # u
+        "initial_state": [
+                        1500.0, 
+                        2000.0
+                        ],
     },
+
     "training_data_cfg" : {
         "batch_size": 100,
-        "seq_len":    2001,
-        "input_dim": 1,  # y
-        "output_dim": 1,  # u
         "dt" : 0.01,
-        "min_correlation_threshold": -1.1,
-        "n_u": 2,
-        "n_y": 2,
+        "seq_len":    2001,
+
+        "input_dim": 1,                     # Number of plant control inputs
+        "output_dim": 1,                    # Number of plant outputs
+        
+        "min_correlation_threshold": -1.1,  # Minimum value of Pearson's correlation coefficient between input and output
+        "nu_u": 2,
+        "nu_y": 2,
 
         "u_1_D_center_min": 0.6,
         "u_1_D_center_max": 0.9,
@@ -389,70 +278,84 @@ hyperparam_config_TrophophasePlant = {
     },
 
     "train": {
-        # Hyperparameters to be constant
-        "device": "cuda", 
-        "delay_steps": 1,
-        "loss_function": "MSELoss()", 
-        "lr_decay_rate":1,
         "k_folds": 2,
+        "epochs": 100,
         "lr": 1e-3,
-
+        "device": "cuda", 
         "mini_batch_size": 1,
 
-        # Hyperparameters for tuning
-        "epochs": 100,
+        "loss_function": "MSELoss",    
+        "patience_epochs": 3,    
+        "patience_min_improvement": 0.0001,
         "min_correlation_threshold": -1.1,
-        "constant_signal_probability": 0.0,
-        "n_u": 2,
-        "n_y": 2,
-        
-        "test_patience_epochs": 3,
-        "test_min_delta": 0.0001,
-        "lookback_offset": 20
+
+        "nu_u": 2,
+        "nu_y": 2,
     },
 
+    # Default hyperparameters for Mamba-based sequence models
     "mamba": {
-        "expand": 9,
         "d_state": 31,
+        "expand": 9,
         "d_conv": 9
     },
 
-    "esn": {
-            "units": 200,   
-            "lr": 0.5,
-            "sr": 0.9,
-            "ridge": 1e-7,    # Regularization coefficient  
-        },
+    # Hyperparameter space of the Mamba sequence model for hyperparameter tuning via Optuna
+        "mamba_param_space" : {
+            "mamba.d_conv":  {"type": "int", "low": 1, "high": 10},
+            "mamba.d_state": {"type": "int", "low": 1, "high": 64},
+            "mamba.expand":  {"type": "int", "low": 1, "high": 10},
+            },
 
-    "mamba_param_space" : {
-    "mamba.d_conv":  {"type": "int", "low": 1, "high": 10},
-    "mamba.d_state": {"type": "int", "low": 1, "high": 64},
-    "mamba.expand":  {"type": "int", "low": 1, "high": 10},
+    # Default hyperparameters for LSTM-based sequence model
+    "lstm": {
+        "hidden_size": 64,
+        "num_layers": 2,
+        "dropout": 0.1,
+    },
+    # Hyperparameter space of the LSTM sequence model for hyperparameter tuning via Optuna
+    "lstm_param_space" : {
+        "lstm.hidden_size": {"type": "int", "low": 16, "high": 128},
+        "lstm.num_layers": {"type": "int", "low": 1, "high": 4},
+        "lstm.dropout": {"type": "float", "low": 0.0, "high": 0.5},
     },
 
-    
-
-    "lstm":{
-        "hidden_size": 16,
-        "num_layers": 1,
-        "dropout": 0.1
-
-    },
+    # Default hyperparameters for Transformer-based sequence model 
     "transformer": {
-            "nhead" : 2,
-            "num_layers" : 6,
-            "dim_feedforward" : 256,
-            "max_seq_len" : 2000
-        },
-        
+                    "nhead" : 2,
+                    "num_layers" : 6,
+                    "dim_feedforward" : 256,
+                    "max_seq_len" : 2000
+                },
+    # Hyperparameter space of the Transformer sequence model for hyperparameter tuning via Optuna                
     "transformer_param_space":  {
-    "transformer.nhead":           {"type": "categorical", "choices": [1, 2, 3]}, # Must divide d_model
-    "transformer.num_layers":      {"type": "int", "low": 1, "high": 4},
-    "transformer.dim_feedforward": {"type": "categorical", "choices": [64, 128, 256]},
+        "transformer.nhead":           {"type": "categorical", "choices": [1, 2, 3]}, # Must divide d_model
+        "transformer.num_layers":      {"type": "int", "low": 1, "high": 4},
+        "transformer.dim_feedforward": {"type": "categorical", "choices": [64, 128, 256]},
+        },
+
+    # Default hyperparameters for ESN-based sequence model 
+    "esn": {
+        "units": 200,   
+        "lr": 0.5,
+        "sr": 0.9,
+        "ridge": 1e-7,    # Regularization coefficient  
     },
 
     "simulate": {
         "batch_size": 10,
         "seq_len": 2001,
-    }
+    },
+
+    "validation_trajectories" : {
+            "batch_size": 10,
+            "seq_len"   : 401,
+            "set_point" : 0.25,
+            "amplitude" : 0.04,
+            "period"    : 20.0,
+    
+            "y_start"   : 0.5,
+            "y_target"  : 0.2,
+            "tau"       : 0.1         
+        }
 }

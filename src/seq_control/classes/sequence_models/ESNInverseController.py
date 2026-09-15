@@ -69,7 +69,4 @@ class ESNInverseController:
         # Run the sequence through the reservoir and readout
         return self.model.run(x)
     
-    def save_parameters(self, path):
-        """Save the trained ESN model to disk."""
 
-        print(self.reservoir.bias)

@@ -45,8 +45,8 @@ def validate_multiple_controllers(
     
     device = hyperparam_config["train"]["device"]
     dt = hyperparam_config["training_data_cfg"]["dt"]
-    n_y = hyperparam_config["training_data_cfg"]["n_y"]
-    n_u = hyperparam_config["training_data_cfg"]["n_u"]
+    nu_y = hyperparam_config["training_data_cfg"]["nu_y"]
+    nu_u = hyperparam_config["training_data_cfg"]["nu_u"]
     
     plant_cfg = hyperparam_config.get("plant", {})
     u_min = plant_cfg.get("u_1_hard_min", None)
@@ -111,7 +111,7 @@ def validate_multiple_controllers(
             y_src = y_ref_np if mode == "open_loop" else y_achieved
             u_src = u_ref_np if mode == "open_loop" else u_applied
             
-            v_k = construct_feature_vector(k, y_ref_np, y_src, u_src, n_y, n_u)
+            v_k = construct_feature_vector(k, y_ref_np, y_src, u_src, nu_y, nu_u)
             v_k_scaled = sx.transform(v_k)
             v_frames_scaled.append(v_k_scaled)
 
@@ -140,7 +140,7 @@ def validate_multiple_controllers(
             y_src = y_ref_np if mode == "open_loop" else y_achieved
             u_src = u_ref_np if mode == "open_loop" else u_applied
 
-            v_k = construct_feature_vector(k, y_ref_np, y_src, u_src, n_y, n_u)
+            v_k = construct_feature_vector(k, y_ref_np, y_src, u_src, nu_y, nu_u)
             v_k_scaled = sx.transform(v_k)
             v_frames_scaled.append(v_k_scaled)
 
@@ -246,9 +246,9 @@ def validate_controller_ext_ref_multi(
     - models_dict (dict): Dictionary mapping model names to dicts containing 'model',
       'x_scaler', and 'y_scaler' (or 'Model', 'scaler_x', 'scaler_y').
     - plant: Plant class instance.
-    - y_ref (Tensor or np.ndarray): Reference target shaped [steps], [steps, n_y], 
-      or [N, steps, n_y].
-    - hyperparam_config (dict): Configuration containing dt, n_y, n_u, device, etc.
+    - y_ref (Tensor or np.ndarray): Reference target shaped [steps], [steps, nu_y], 
+      or [N, steps, nu_y].
+    - hyperparam_config (dict): Configuration containing dt, nu_y, nu_u, device, etc.
     - dirname (str): Folder path to store summary CSV and trajectory figures.
     - start_idx (int): Warm-up step index where models take over control.
     - u_ref (Tensor or np.ndarray, optional): Nominal control inputs for warm-up phase.
@@ -259,8 +259,8 @@ def validate_controller_ext_ref_multi(
 
     device = hyperparam_config["train"]["device"]
     dt = hyperparam_config["training_data_cfg"]["dt"]
-    n_y = hyperparam_config["training_data_cfg"]["n_y"]
-    n_u = hyperparam_config["training_data_cfg"]["n_u"]
+    nu_y = hyperparam_config["training_data_cfg"]["nu_y"]
+    nu_u = hyperparam_config["training_data_cfg"]["nu_u"]
 
     plant_cfg = hyperparam_config.get("plant", {})
     u_min = plant_cfg.get("u_1_hard_min", None)
@@ -342,7 +342,7 @@ def validate_controller_ext_ref_multi(
             y_src = y_ref_np if mode == "open_loop" else y_achieved
             u_src = u_ref_np if mode == "open_loop" else u_applied
 
-            v_k = construct_feature_vector(k, y_ref_np, y_src, u_src, n_y, n_u)
+            v_k = construct_feature_vector(k, y_ref_np, y_src, u_src, nu_y, nu_u)
             v_k_scaled = scaler_x.transform(v_k)
             v_frames_scaled.append(v_k_scaled)
 
@@ -371,7 +371,7 @@ def validate_controller_ext_ref_multi(
             y_src = y_ref_np if mode == "open_loop" else y_achieved
             u_src = u_ref_np if mode == "open_loop" else u_applied
 
-            v_k = construct_feature_vector(k, y_ref_np, y_src, u_src, n_y, n_u)
+            v_k = construct_feature_vector(k, y_ref_np, y_src, u_src, nu_y, nu_u)
             v_k_scaled = scaler_x.transform(v_k)
             v_frames_scaled.append(v_k_scaled)
 
@@ -427,6 +427,7 @@ def validate_controller_ext_ref_multi(
 
     # --- 5. SUMMARY DATAFRAME GENERATION ---
     summary_df = pd.DataFrame(summary_records).sort_values(by="Tracking RMSE").reset_index(drop=True)
+    os.makedirs(dirname, exist_ok=True)
     summary_df.to_csv(os.path.join(dirname, f"multi_model_{mode}_summary.csv"), index=False)
 
     print(f"\n==================================================")
@@ -466,65 +467,61 @@ def validate_controller_ext_ref_multi(
 
 
 
-def construct_feature_vector(k, y_ref, y_src, u_src, n_y, n_u):
+def construct_feature_vector(k, y_ref, y_src, u_src, nu_y, nu_u):
     """
     Constructs feature frame v_k at step k with zero-padding 
-    if history length is smaller than n_y or n_u.
+    if history length is smaller than nu_y or nu_u.
     """
     N = y_ref.shape[0]
     y_next_ref = y_ref[:, k + 1, :]
 
-    # Extract or pad y history (length n_y + 1)
-    if k >= n_y:
-        y_hist = y_src[:, k - n_y : k + 1, :][:, ::-1, :].reshape(N, -1)
+    # Extract or pad y history (length nu_y + 1)
+    if k >= nu_y:
+        y_hist = y_src[:, k - nu_y : k + 1, :][:, ::-1, :].reshape(N, -1)
     else:
         available_y = y_src[:, 0 : k + 1, :][:, ::-1, :]
-        pad_len = (n_y + 1) - available_y.shape[1]
+        pad_len = (nu_y + 1) - available_y.shape[1]
         pad = np.zeros((N, pad_len, y_ref.shape[-1]), dtype=np.float32)
         y_hist = np.concatenate([available_y, pad], axis=1).reshape(N, -1)
 
-    # Extract or pad u history (length n_u)
-    if k >= n_u:
-        u_hist = u_src[:, k - n_u : k, :][:, ::-1, :].reshape(N, -1)
+    # Extract or pad u history (length nu_u)
+    if k >= nu_u:
+        u_hist = u_src[:, k - nu_u : k, :][:, ::-1, :].reshape(N, -1)
     else:
         if k > 0:
             available_u = u_src[:, 0 : k, :][:, ::-1, :]
-            pad_len = n_u - available_u.shape[1]
+            pad_len = nu_u - available_u.shape[1]
             pad = np.zeros((N, pad_len, u_src.shape[-1]), dtype=np.float32)
             u_hist = np.concatenate([available_u, pad], axis=1).reshape(N, -1)
         else:
-            u_hist = np.zeros((N, n_u * u_src.shape[-1]), dtype=np.float32)
+            u_hist = np.zeros((N, nu_u * u_src.shape[-1]), dtype=np.float32)
 
     return np.concatenate([y_next_ref, y_hist, u_hist], axis=1)
 
 
-def get_initial_state_from_config(hyperparam_config, batch_size=1, device="cpu"):
+def get_initial_state_from_config(hyperparam_config, batch_size=1, device="cuda"):
     """
-    Dynamically parses initial state parameters (e.g. x10, x20, x30) from hyperparam_config["plant"].
+    Parses the initial state list (e.g. [x10, x20, ...]) from hyperparam_config["plant"]["x0"].
 
     Returns:
     - x0_tensor (torch.Tensor or None): Shaped [batch_size, state_dim] if found, else None.
     """
     plant_cfg = hyperparam_config.get("plant", {})
+    
+    # Check for 'x0' inside plant dict, or fallback to top-level dict
+    x0_list = plant_cfg["initial_state"]
 
-    # Extract and sort keys matching pattern 'x10', 'x20', 'x30'...
-    x0_keys = sorted(
-        [k for k in plant_cfg.keys() if k.startswith("x") and k.endswith("0") and k[1:-1].isdigit()],
-        key=lambda k: int(k[1:-1])
-    )
+    if x0_list is None:
+        return None
 
-    if x0_keys:
-        x0_values = [float(plant_cfg[k]) for k in x0_keys]
-        x0_tensor = torch.tensor(x0_values, dtype=torch.float32, device=device)
-        return x0_tensor.unsqueeze(0).repeat(batch_size, 1)
+    x0_tensor = torch.tensor(x0_list, 
+                             dtype=torch.float32, 
+                             device=device)
+    
+    # Reshape from [state_dim] to [batch_size, state_dim]
+    return x0_tensor.unsqueeze(0).repeat(batch_size, 1)
 
-    # Fallback to 'x0' or 'initial_state' explicit key if present
-    for key in ["x0", "initial_state"]:
-        if key in plant_cfg and plant_cfg[key] is not None:
-            x0_tensor = torch.tensor(plant_cfg[key], dtype=torch.float32, device=device)
-            return x0_tensor.unsqueeze(0).repeat(batch_size, 1)
 
-    return None
 
 
 #=== FUNCTION TO VALIDATE CONTROLLER ON GIVEN TRAJECTORY ===#
@@ -551,7 +548,7 @@ def validate_controller_ext_ref(
     - y_ref (Tensor or np.ndarray): Reference output target shaped [steps, output_dim],
       [steps], or [N, steps, output_dim].
     - scaler_x, scaler_y: Feature/target scalers (e.g. StandardScaler / MinMaxScaler).
-    - hyperparam_config (dict): Configuration containing dt, n_y, n_u, device, etc.
+    - hyperparam_config (dict): Configuration containing dt, nu_y, nu_u, device, etc.
     - dirname (str): Folder path to store resulting plot figures.
     - start_idx (int): Warm-up step index where model takes over control.
     - initial_state (Tensor or np.ndarray, optional): Starting state x_0 of the system.
@@ -563,8 +560,8 @@ def validate_controller_ext_ref(
 
     device = hyperparam_config["train"]["device"]
     dt = hyperparam_config["training_data_cfg"]["dt"]
-    n_y = hyperparam_config["training_data_cfg"]["n_y"]
-    n_u = hyperparam_config["training_data_cfg"]["n_u"]
+    nu_y = hyperparam_config["training_data_cfg"]["nu_y"]
+    nu_u = hyperparam_config["training_data_cfg"]["nu_u"]
 
     plant_cfg = hyperparam_config.get("plant", {})
     u_min = plant_cfg.get("u_1_hard_min", None)
@@ -634,7 +631,7 @@ def validate_controller_ext_ref(
         y_src = y_ref_np if mode == "open_loop" else y_achieved
         u_src = u_ref_np if mode == "open_loop" else u_applied
 
-        v_k = construct_feature_vector(k, y_ref_np, y_src, u_src, n_y, n_u)
+        v_k = construct_feature_vector(k, y_ref_np, y_src, u_src, nu_y, nu_u)
         v_k_scaled = scaler_x.transform(v_k)
         v_frames_scaled.append(v_k_scaled)
 
@@ -662,7 +659,7 @@ def validate_controller_ext_ref(
         y_src = y_ref_np if mode == "open_loop" else y_achieved
         u_src = u_ref_np if mode == "open_loop" else u_applied
 
-        v_k = construct_feature_vector(k, y_ref_np, y_src, u_src, n_y, n_u)
+        v_k = construct_feature_vector(k, y_ref_np, y_src, u_src, nu_y, nu_u)
         v_k_scaled = scaler_x.transform(v_k)
         v_frames_scaled.append(v_k_scaled)
 
@@ -758,8 +755,8 @@ def validate_controller(
     
     device = hyperparam_config["train"]["device"]
     dt = hyperparam_config["training_data_cfg"]["dt"]
-    n_y = hyperparam_config["training_data_cfg"]["n_y"]
-    n_u = hyperparam_config["training_data_cfg"]["n_u"]
+    nu_y = hyperparam_config["training_data_cfg"]["nu_y"]
+    nu_u = hyperparam_config["training_data_cfg"]["nu_u"]
     
     plant_cfg = hyperparam_config.get("plant", {})
     u_min = plant_cfg.get("u_1_hard_min", None)
@@ -804,7 +801,7 @@ def validate_controller(
         
         y_src = y_ref_np if mode == "open_loop" else y_achieved
         u_src = u_ref_np if mode == "open_loop" else u_applied
-        v_k = construct_feature_vector(k, y_ref_np, y_src, u_src, n_y, n_u)
+        v_k = construct_feature_vector(k, y_ref_np, y_src, u_src, nu_y, nu_u)
         v_k_scaled = scaler_x.transform(v_k)
         v_frames_scaled.append(v_k_scaled)
 
@@ -833,7 +830,7 @@ def validate_controller(
         y_src = y_ref_np if mode == "open_loop" else y_achieved
         u_src = u_ref_np if mode == "open_loop" else u_applied
 
-        v_k = construct_feature_vector(k, y_ref_np, y_src, u_src, n_y, n_u)
+        v_k = construct_feature_vector(k, y_ref_np, y_src, u_src, nu_y, nu_u)
         v_k_scaled = scaler_x.transform(v_k)
         v_frames_scaled.append(v_k_scaled)
 
@@ -1182,9 +1179,11 @@ def generate_exponential_decay_trajectory(steps,
 def generate_reference_trajectory(steps, 
                                   dt, 
                                   device, 
-                                  mode="constant", 
-                                  constant_val=0.3, 
-                                  gain=1.0, period=20.0):
+                                  constant_val, 
+                                  amplitude,
+                                  period,
+                                  gain=1.0, 
+                                  mode="constant"):
     """
     Generates reference target trajectories for physical control system tracking simulations.
 
@@ -1207,7 +1206,10 @@ def generate_reference_trajectory(steps,
     """
     if mode == "constant":
         # Create a tensor of shape [steps, 1] filled with a static target value
-        r_trajectory = torch.full((steps, 1), constant_val, device=device, dtype=torch.float32)
+        r_trajectory = torch.full((steps, 1), 
+                                  constant_val, 
+                                  device=device, 
+                                  dtype=torch.float32)
     
     elif mode == "dynamic":
         # Generate time steps array
@@ -1220,9 +1222,7 @@ def generate_reference_trajectory(steps,
 
         noise = 0 #np.random.uniform(-0.005, 0.005, size=time_axis.shape)
 
-        #r_trajectory_np = 0.25 + 0.04 * np.tanh(gain * sine_base) - 0.00 * time_axis   # Add small random noise for realism #chemostat
-
-        r_trajectory_np = 0.02 + 0.005 * np.tanh(gain * sine_base) - 0.00 * time_axis +noise  # Add small random noise for realism
+        r_trajectory_np = constant_val + amplitude * np.tanh(gain * sine_base) + noise  # Add small random noise for realism
         
         # Convert the structural numpy baseline into a target PyTorch tensor array
         r_trajectory = torch.tensor(r_trajectory_np, device=device, dtype=torch.float32).unsqueeze(1)
