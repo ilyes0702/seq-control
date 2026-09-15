@@ -323,7 +323,7 @@ hyperparam_config_CoCultivationPlant = {
                            1.0,         # Initial substrate molar concentration [mmol/L]
                            1.545e-2,    # Initial intracellular molar concentration of lysine [mmol/g]
                            1.655e-3]    # Initial intracellular molar concentration of leucine [mmol/g]
-    },
+        },
 
     "training_data_cfg": {
         "batch_size": 100,
@@ -386,16 +386,17 @@ hyperparam_config_CoCultivationPlant = {
     
     # Default hyperparameters for Mamba-based sequence models
     "mamba": {
-        "d_state": 16,                      
-        "expand": 4,
-        "d_conv" : 2
+        "d_state": 31,                      
+        "expand": 9,
+        "d_conv" : 9
     },
     # Hyperparameter space of the Mamba sequence model for hyperparameter tuning via Optuna
     "mamba_param_space" : {
         "mamba.d_conv":  {"type": "int", "low": 1, "high": 10},
         "mamba.d_state": {"type": "int", "low": 1, "high": 64},
         "mamba.expand":  {"type": "int", "low": 1, "high": 10},
-        },
+    },
+
     # Default hyperparameters for LSTM-based sequence model
     "lstm": {
         "hidden_size": 64,
@@ -410,11 +411,12 @@ hyperparam_config_CoCultivationPlant = {
     },
     # Default hyperparameters for Transformer-based sequence model 
     "transformer": {
-                    "nhead" : 2,
-                    "num_layers" : 6,
-                    "dim_feedforward" : 256,
-                    "max_seq_len" : 2000
-                },
+        "nhead" : 2,
+        "num_layers" : 6,
+        "dim_feedforward" : 256,
+        "max_seq_len" : 2000
+    },
+
     # Hyperparameter space of the Transformer sequence model for hyperparameter tuning via Optuna                
     "transformer_param_space":  {
         "transformer.nhead":           {"type": "categorical", "choices": [1, 2, 3]}, # Must divide d_model
@@ -431,13 +433,14 @@ hyperparam_config_CoCultivationPlant = {
 
     "validation_trajectories" : {
         "batch_size": 10,
-        "seq_len"   : 401,
-        "set_point" : 0.25,
-        "amplitude" : 0.04,
-        "period"    : 20.0,
+        "seq_len"   : 2001,
+        
+        "set_point" : [1, 6],
+        "amplitude" : [0.5, 0.5],
+        "period"    : [20.0, 20.0],
 
-        "y_start"   : 0.5,
-        "y_target"  : 0.2,
-        "tau"       : 0.1         
+        "y_start"   : [0.0,0],
+        "y_target"  : [1,6],
+        "tau"       : [0.1,0.1]         
     },
 }

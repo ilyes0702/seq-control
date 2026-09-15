@@ -25,6 +25,7 @@ def validate_multiple_controllers(
     hyperparam_config,
     dirname,
     start_idx,
+    window_len=None,
     mode="closed_loop",
     show_plots=False
 ):
@@ -77,7 +78,8 @@ def validate_multiple_controllers(
     # --- SIMULATION LOOP OVER EACH MODEL CONFIGURATION ---
     for model_name, model_cfg in models_dict.items():
         print(f"\n🧪 Simulating Model: '{model_name}' ({mode.upper()} Mode)...")
-
+        if model_name == "TransformerInverseController" or plant.__class__.__name__ == "IndForProteinProductionPlant":
+            window_len = 100
         # Extract model and scalers directly from sub-dictionary
         model = model_cfg.get("Model", model_cfg.get("model"))
         sx = model_cfg.get("x_scaler", model_cfg.get("scaler_x"))
@@ -119,7 +121,7 @@ def validate_multiple_controllers(
             u_applied[:, k, :] = u_k_np
             u_k_tensor = torch.tensor(u_k_np, dtype=torch.float32, device=device)
 
-            next_state, _ = plant.step(current_state, u_k_tensor, t=t_current, dt=dt)
+            next_state, _ = plant.step(current_state, u_k_tensor, t=t_current)
             current_state = next_state
 
             states_achieved[:, k + 1, :] = current_state.cpu().numpy()
@@ -143,8 +145,11 @@ def validate_multiple_controllers(
             v_k = construct_feature_vector(k, y_ref_np, y_src, u_src, nu_y, nu_u)
             v_k_scaled = sx.transform(v_k)
             v_frames_scaled.append(v_k_scaled)
+            
 
             v_seq_np = np.stack(v_frames_scaled, axis=1)
+            if window_len is not None:
+                v_seq_np = np.stack(v_frames_scaled[-window_len:], axis=1)
             v_seq_tensor = torch.tensor(v_seq_np, dtype=torch.float32, device=device)
 
             if hasattr(model, "forward") and isinstance(model, torch.nn.Module):
@@ -163,7 +168,7 @@ def validate_multiple_controllers(
             u_applied[:, k, :] = u_k_np
             u_k_tensor = torch.tensor(u_k_np, dtype=torch.float32, device=device)
 
-            next_state, _ = plant.step(current_state, u_k_tensor, t=t_current, dt=dt)
+            next_state, _ = plant.step(current_state, u_k_tensor, t=t_current)
             current_state = next_state
 
             states_achieved[:, k + 1, :] = current_state.cpu().numpy()
@@ -200,7 +205,9 @@ def validate_multiple_controllers(
     print(f"==========================================")
     print(summary_df.to_string(index=False))
     print(f"==========================================\n")
-    summary_df.to_csv(os.path.join(dirname, f"multi_model_{mode}_summary.csv"), index=False)
+    save_df_to_csv(summary_df, 
+                   dirname=dirname, 
+                   filename=f"multi_model_{mode}_summary.csv")
 
     # --- RENDER STACKED PLOTS ---
     print(f"📊 Rendering multi-model trajectory plots using `plot_stacked`...")
@@ -234,7 +241,7 @@ def validate_controller_ext_ref_multi(
     hyperparam_config,
     dirname="./plots_ref_multi",
     start_idx=10,
-    u_ref=None,
+    window_len=None,
     mode="closed_loop",
     show_plots=False
 ):
@@ -251,7 +258,7 @@ def validate_controller_ext_ref_multi(
     - hyperparam_config (dict): Configuration containing dt, nu_y, nu_u, device, etc.
     - dirname (str): Folder path to store summary CSV and trajectory figures.
     - start_idx (int): Warm-up step index where models take over control.
-    - u_ref (Tensor or np.ndarray, optional): Nominal control inputs for warm-up phase.
+    - window_len (int): Length of the window for validation.
     - mode (str): 'closed_loop' or 'open_loop'.
     - show_plots (bool): Whether to display Matplotlib figures interactively.
     """
@@ -267,16 +274,38 @@ def validate_controller_ext_ref_multi(
     u_max = plant_cfg.get("u_1_hard_max", None)
 
     # --- 1. FORMAT REFERENCE TARGET (y_ref) ---
-    if isinstance(y_ref, torch.Tensor):
-        y_ref_raw = y_ref.detach().cpu()
-    else:
-        y_ref_raw = torch.tensor(y_ref, dtype=torch.float32)
+    def _to_3d_ref(ref):
+        """Standardizes an individual target trajectory into shape [N, total_seq_len, feature_dim]."""
+        if isinstance(ref, torch.Tensor):
+            t = ref.detach().cpu().float()
+        else:
+            t = torch.tensor(ref, dtype=torch.float32)
 
-    # Standardize shape to [N, total_seq_len, output_dim]
-    if y_ref_raw.ndim == 1:
-        y_ref_raw = y_ref_raw.unsqueeze(0).unsqueeze(-1)
-    elif y_ref_raw.ndim == 2:
-        y_ref_raw = y_ref_raw.unsqueeze(0)
+        if t.ndim == 1:
+            # [steps] -> [1, steps, 1]
+            return t.unsqueeze(0).unsqueeze(-1)
+        elif t.ndim == 2:
+            # [steps, feature_dim] -> [1, steps, feature_dim]
+            # E.g., [2001, 1] becomes [1, 2001, 1]
+            if t.shape[1] == 1 and t.shape[0] > 1:
+                return t.unsqueeze(0)
+            # [N, steps] -> [N, steps, 1]
+            elif t.shape[0] == 1:
+                return t.unsqueeze(-1)
+            else:
+                # Default assumption for 2D trajectories [steps, output_dim]
+                return t.unsqueeze(0)
+        elif t.ndim == 3:
+            return t
+        else:
+            raise ValueError(f"Unsupported reference tensor shape: {t.shape}")
+
+    if isinstance(y_ref, (list, tuple)):
+        # Format each channel trajectory and concatenate along the output feature dimension
+        formatted_refs = [_to_3d_ref(ref) for ref in y_ref]
+        y_ref_raw = torch.cat(formatted_refs, dim=-1)
+    else:
+        y_ref_raw = _to_3d_ref(y_ref)
 
     N, total_seq_len, output_dim = y_ref_raw.shape
     control_dim = hyperparam_config["training_data_cfg"]["input_dim"]
@@ -284,18 +313,8 @@ def validate_controller_ext_ref_multi(
     y_ref_np = y_ref_raw.numpy()
 
     # --- 2. FORMAT CONTROL REFERENCE (u_ref) ---
-    if u_ref is not None:
-        if isinstance(u_ref, torch.Tensor):
-            u_ref_np = u_ref.detach().cpu().numpy()
-        else:
-            u_ref_np = np.array(u_ref, dtype=np.float32)
-            
-        if u_ref_np.ndim == 1:
-            u_ref_np = np.expand_dims(u_ref_np, axis=(0, -1))
-        elif u_ref_np.ndim == 2:
-            u_ref_np = np.expand_dims(u_ref_np, axis=0)
-    else:
-        u_ref_np = np.zeros((N, total_seq_len, control_dim), dtype=np.float32)
+    
+    u_ref_np = np.zeros((N, total_seq_len, control_dim), dtype=np.float32)
 
     # --- 3. GET BASE INITIAL PLANT STATE ---
     config_x0 = get_initial_state_from_config(hyperparam_config, batch_size=N, device=device)
@@ -316,7 +335,8 @@ def validate_controller_ext_ref_multi(
         model = model_cfg["model"]
         scaler_x = model_cfg["x_scaler"]
         scaler_y = model_cfg["y_scaler"]
-
+        if model_name == "TransformerInverseController" or plant.__class__.__name__ == "IndForProteinProductionPlant":
+            window_len = 100
         # Reset plant initial state independently for each controller
         current_state = config_x0.clone().to(device)
         state_dim = current_state.shape[-1]
@@ -350,7 +370,7 @@ def validate_controller_ext_ref_multi(
             u_applied[:, k, :] = u_k_np
             u_k_tensor = torch.tensor(u_k_np, dtype=torch.float32, device=device)
 
-            next_state, _ = plant.step(current_state, u_k_tensor, t=t_current, dt=dt)
+            next_state, _ = plant.step(current_state, u_k_tensor, t=t_current)
             current_state = next_state
 
             states_achieved[:, k + 1, :] = current_state.cpu().numpy()
@@ -376,6 +396,8 @@ def validate_controller_ext_ref_multi(
             v_frames_scaled.append(v_k_scaled)
 
             v_seq_np = np.stack(v_frames_scaled, axis=1)
+            if window_len is not None:
+                v_seq_np = np.stack(v_frames_scaled[-window_len:], axis=1)
             v_seq_tensor = torch.tensor(v_seq_np, dtype=torch.float32, device=device)
 
             if hasattr(model, "forward") and isinstance(model, torch.nn.Module):
@@ -394,7 +416,7 @@ def validate_controller_ext_ref_multi(
             u_applied[:, k, :] = u_k_np
             u_k_tensor = torch.tensor(u_k_np, dtype=torch.float32, device=device)
 
-            next_state, _ = plant.step(current_state, u_k_tensor, t=t_current, dt=dt)
+            next_state, _ = plant.step(current_state, u_k_tensor, t=t_current)
             current_state = next_state
 
             states_achieved[:, k + 1, :] = current_state.cpu().numpy()
@@ -428,7 +450,8 @@ def validate_controller_ext_ref_multi(
     # --- 5. SUMMARY DATAFRAME GENERATION ---
     summary_df = pd.DataFrame(summary_records).sort_values(by="Tracking RMSE").reset_index(drop=True)
     os.makedirs(dirname, exist_ok=True)
-    summary_df.to_csv(os.path.join(dirname, f"multi_model_{mode}_summary.csv"), index=False)
+    save_df_to_csv(summary_df, 
+                   dirname=dirname,             filename=f"multi_model_{mode}_summary.csv")
 
     print(f"\n==================================================")
     print(f"🏆 MULTI-MODEL {mode.upper()} EVALUATION RANKINGS")
@@ -1178,12 +1201,12 @@ def generate_exponential_decay_trajectory(steps,
 #=== FUNCTION TO GENERATE CONSTANT OR SINUSOIDAL REFERENCE TRAJECTORY ===#
 def generate_reference_trajectory(steps, 
                                   dt, 
-                                  device, 
                                   constant_val, 
-                                  amplitude,
-                                  period,
+                                  amplitude=None,
+                                  period=None,
                                   gain=1.0, 
-                                  mode="constant"):
+                                  mode="constant",
+                                  device="cuda" ):
     """
     Generates reference target trajectories for physical control system tracking simulations.
 

@@ -245,8 +245,8 @@ class IndForProteinProductionPlant:
                     r"$x_3 \; [\mathrm{g \cdot L^{-1}}]$",
                     r"$x_4 \; [\mathrm{g \cdot L^{-1}}]$",
                     r"$x_5 \; [\mathrm{g \cdot L^{-1}}]$",
-                    r"$x_6 \; [\mathrm{dimensionless}]$",
-                    r"$x_7 \; [\mathrm{dimensionless}]$"
+                    r"$x_6 \; [\mathrm{-}]$",
+                    r"$x_7 \; [\mathrm{-}]$"
                 ],
                 "ylabel": [
                     r"$x_1 \; [\mathrm{L}]$", 
@@ -368,7 +368,7 @@ hyperparam_config_IndForProteinProductionPlant = {
     },
 
     "train": {
-        "k_folds": 5,                               # Number of cross validation splits
+        "k_folds": 2,                               # Number of cross validation splits
         "epochs": 100,                              # Maximum number of epochs
         "lr": 1e-3,                                 # Learning rate of the Adam optimizer
         "device": "cuda",                           # Core processing target execution context
@@ -384,10 +384,10 @@ hyperparam_config_IndForProteinProductionPlant = {
     
     # Default hyperparameters for Mamba-based sequence models
     "mamba": {
-        "d_state": 31,
-        "expand": 9,
-        "d_conv": 9
-    },
+            "d_state": 31,                      
+            "expand": 9,
+            "d_conv" : 9
+        },
 
     # Hyperparameter space of the Mamba sequence model for hyperparameter tuning via Optuna
         "mamba_param_space" : {
@@ -411,7 +411,7 @@ hyperparam_config_IndForProteinProductionPlant = {
 
     # Default hyperparameters for Transformer-based sequence model 
     "transformer": {
-                    "nhead" : 2,
+                    "nhead" : 1,
                     "num_layers" : 6,
                     "dim_feedforward" : 256,
                     "max_seq_len" : 2000
@@ -433,14 +433,14 @@ hyperparam_config_IndForProteinProductionPlant = {
 
     "validation_trajectories" : {
             "batch_size": 10,
-            "seq_len"   : 401,
-            "set_point" : 0.25,
-            "amplitude" : 0.04,
-            "period"    : 20.0,
+            "seq_len"   : 1501,
+            "set_point" : [5, 0.3, 0.1],
+            "amplitude" : [1, 0.01, 0.01],
+            "period"    : [20.0, 20.0, 20.0],
     
-            "y_start"   : 0.5,
-            "y_target"  : 0.2,
-            "tau"       : 0.1         
+            "y_start"   : [0.2, 0.1, 0.05],
+            "y_target"  : [0.5, 0.3, 0.1],
+            "tau"       : [0.1, 0.1, 0.1]         
         }
 }
 

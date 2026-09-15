@@ -34,15 +34,14 @@ from seq_control.utils.plotting_utils import *
 
 #=== FUNCTION TO COUNT THE PARAMETERS OF A SEQUENCE MODEL ===#
 def count_seq_model_params(model):
-    
-        # Total parameters (trainable + non-trainable)
-        total_params = sum(p.numel() for p in model.parameters())
+    # Total parameters (trainable + non-trainable)
+    total_params = sum(p.numel() for p in model.parameters())
 
-        # Trainable parameters only
-        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    # Trainable parameters only
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
-        print(f"Total parameters: {total_params:,}")
-        print(f"Trainable parameters: {trainable_params:,}")
+    print(f"Total parameters: {total_params:,}")
+    print(f"Trainable parameters: {trainable_params:,}")
 
 #=== FUNCTION TO COMPUTE AND SAVE TRACKING METRICS ===#
 def compute_and_save_tracking_metrics(

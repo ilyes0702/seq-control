@@ -48,7 +48,7 @@ xtick.labelsize: large
 ### Legend
 legend.frameon: True
 legend.framealpha: 0.3
-legend.fontsize: 10
+legend.fontsize: 3
 
 ### Figure size
 figure.figsize: 5.0, 3.0

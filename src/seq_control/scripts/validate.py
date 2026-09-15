@@ -22,93 +22,232 @@ from seq_control.classes.sequence_models.ESNInverseController import *
 from seq_control.classes.sequence_models.LSTMInverseController import *
 from seq_control.classes.sequence_models.TransformerInverseController import *
 
-
-
 def main():
+    # Used data
+    REF_data_date = "2026-09-15"
+    REF_data_date_and_time = "2026-09-15_16-50-06"
+    # Used models
+    REF_mod_date = "2026-09-15"
+    REF_mod_date_and_time = "2026-09-15_23-55-00"
 
     # Initialize plant instances and load training data    
     plant_dict =    {
-            "ChemostatPlant": {
-                "plant" : ChemostatPlant(hyperparam_config=hyperparam_config_ChemostatPlant),
-                "val_data_sw_ic": torch.load("src/seq_control/results/2026-09-13/2026-09-13_11-19-22/ChemostatPlant/sw_ic/dataset/2026-09-13_11-19-22_sw_ic_validation_data.pt", 
-                weights_only=True),
-                "train_data_sysid": torch.load("src/seq_control/results/2026-09-13/2026-09-13_11-19-22/ChemostatPlant/sw_sysid/dataset/2026-09-13_11-19-22_sw_sysid_validation_data.pt", weights_only=True),
-                "val_data_io": torch.load("src/seq_control/results/2026-09-13/2026-09-13_11-19-22/ChemostatPlant/io/dataset/2026-09-13_11-19-22_val_io_data.pt")
-            },
-            "TrophophasePlant": {
-                "plant" : TrophophasePlant(hyperparam_config=hyperparam_config_TrophophasePlant),
-                "train_data_sw_ic": torch.load("src/seq_control/results/2026-09-13/2026-09-13_11-19-22/TrophophasePlant/sw_ic/dataset/2026-09-13_11-19-22_sw_ic_validation_data.pt", 
-                weights_only=True),
-                "train_data_sysid": torch.load("src/seq_control/results/2026-09-13/2026-09-13_11-19-22/TrophophasePlant/sw_sysid/dataset/2026-09-13_11-19-22_sw_sysid_validation_data.pt", weights_only=True),
-                "val_data_io": torch.load("src/seq_control/results/2026-09-13/2026-09-13_11-19-22/TrophophasePlant/io/dataset/2026-09-13_11-19-22_val_io_data.pt")
-            },
-            "IdiophasePlant": {
-                "plant" : IdiophasePlant(hyperparam_config=hyperparam_config_IdiophasePlant),
-                "train_data_sw_ic": torch.load("src/seq_control/results/2026-09-13/2026-09-13_11-19-22/IdiophasePlant/sw_ic/dataset/2026-09-13_11-19-22_sw_ic_validation_data.pt", weights_only=True),
-                "train_data_sysid": torch.load("src/seq_control/results/2026-09-13/2026-09-13_11-19-22/IdiophasePlant/sw_sysid/dataset/2026-09-13_11-19-22_sw_sysid_validation_data.pt", weights_only=True),
-                "val_data_io": torch.load("src/seq_control/results/2026-09-13/2026-09-13_11-19-22/IdiophasePlant/io/dataset/2026-09-13_11-19-22_val_io_data.pt")
-            },
-            "CoCultivationPlant": {
-                "plant" : CoCultivationPlant(hyperparam_config=hyperparam_config_CoCultivationPlant),
-                "train_data_sw_ic": torch.load("src/seq_control/results/2026-09-13/2026-09-13_11-19-22/CoCultivationPlant/sw_ic/dataset/2026-09-13_11-19-22_sw_ic_validation_data.pt", weights_only=True),
-                "train_data_sysid": torch.load("src/seq_control/results/2026-09-13/2026-09-13_11-19-22/CoCultivationPlant/sw_sysid/dataset/2026-09-13_11-19-22_sw_sysid_validation_data.pt", weights_only=True),
-                "val_data_io": torch.load("src/seq_control/results/2026-09-13/2026-09-13_11-19-22/CoCultivationPlant/io/dataset/2026-09-13_11-19-22_val_io_data.pt")
-            },
-            "IndForProteinProductionPlant" : {
-                "plant" : IndForProteinProductionPlant(hyperparam_config=hyperparam_config_IndForProteinProductionPlant),
-                "train_data_sw_ic": torch.load("src/seq_control/results/2026-09-13/2026-09-13_11-19-22/IndForProteinProductionPlant/sw_ic/dataset/2026-09-13_11-19-22_sw_ic_validation_data.pt", weights_only=True),
-                "train_data_sysid": torch.load("src/seq_control/results/2026-09-13/2026-09-13_11-19-22/IndForProteinProductionPlant/sw_sysid/dataset/2026-09-13_11-19-22_sw_sysid_validation_data.pt", weights_only=True),
-                "val_data_io": torch.load("src/seq_control/results/2026-09-13/2026-09-13_11-19-22/IndForProteinProductionPlant/io/dataset/2026-09-13_11-19-22_val_io_data.pt")
+        "ChemostatPlant": {
+            "plant" : ChemostatPlant(hyperparam_config=hyperparam_config_ChemostatPlant),
+            "val_data_io": torch.load(f"src/seq_control/results/{REF_data_date}/{REF_data_date_and_time}/ChemostatPlant/io/dataset/{REF_data_date_and_time}_val_io_data.pt"),
+            "y_ref": [generate_exponential_decay_trajectory(
+                    hyperparam_config_ChemostatPlant["validation_trajectories"]["seq_len"],
+                    hyperparam_config_ChemostatPlant["training_data_cfg"]["dt"],
+                    hyperparam_config_ChemostatPlant["validation_trajectories"]["y_start"][0],
+                    hyperparam_config_ChemostatPlant["validation_trajectories"]["y_target"][0],
+                    hyperparam_config_ChemostatPlant["validation_trajectories"]["tau"][0]
+                    )],
+            "models_dict": {
+                "MambaInverseController": {
+                    "model": load_model(MambaInverseController,f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/ChemostatPlant_ic/MambaInverseController/fold_1/{REF_mod_date_and_time}_best_fold_model.pt"),
+                    "x_scaler" : load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/ChemostatPlant_ic/MambaInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_x.pkl"),
+                    "y_scaler": load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/ChemostatPlant_ic/MambaInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_y.pkl")
+                },
+                "LSTMInverseController": {
+                    "model": load_model(LSTMInverseController,f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/ChemostatPlant_ic/LSTMInverseController/fold_1/{REF_mod_date_and_time}_best_fold_model.pt"),
+                    "x_scaler" : load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/ChemostatPlant_ic/LSTMInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_x.pkl"),
+                    "y_scaler": load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/ChemostatPlant_ic/LSTMInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_y.pkl")
+                },
+                "TransformerInverseController": {
+                    "model": load_model(TransformerInverseController,f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/ChemostatPlant_ic/TransformerInverseController/fold_1/{REF_mod_date_and_time}_best_fold_model.pt"),
+                    "x_scaler" : load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/ChemostatPlant_ic/TransformerInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_x.pkl"),
+                    "y_scaler": load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/ChemostatPlant_ic/TransformerInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_y.pkl")
+                },
+                "ESNInverseController": {
+                    "model": load_model_esn(ESNInverseController, f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/ChemostatPlant_ic/ESNInverseController/fold_1/{REF_mod_date_and_time}_best_fold_model.pkl"),
+                    "x_scaler" : load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/ChemostatPlant_ic/ESNInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_x.pkl"),
+                    "y_scaler": load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/ChemostatPlant_ic/ESNInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_y.pkl")
+                }
             }
-        }
-
-    plant = plant_dict["ChemostatPlant"]["plant"]
-
-    # Chemostat plant
-    r_static_y_1 = generate_reference_trajectory(
-        steps = plant.hyperparam_config["validation_trajectories"]["seq_len"],
-        dt = plant.hyperparam_config["training_data_cfg"]["dt"],
-        device = plant.hyperparam_config["train"]["device"],
-        constant_val = plant.hyperparam_config["validation_trajectories"]["set_point"],
-        amplitude = plant.hyperparam_config["validation_trajectories"]["amplitude"],
-        period = plant.hyperparam_config["validation_trajectories"]["period"],
-        mode = "dynamic"
-        )
-
-    r_smooth_decay = generate_exponential_decay_trajectory(
-        steps = plant.hyperparam_config["validation_trajectories"]["seq_len"],
-        dt = plant.hyperparam_config["training_data_cfg"]["dt"],
-        y_start = plant.hyperparam_config["validation_trajectories"]["y_start"],       
-        y_target = plant.hyperparam_config["validation_trajectories"]["y_target"],    
-        tau = plant.hyperparam_config["validation_trajectories"]["tau"],           
-    )
-
-    # Load
-    model_dict = {
-        "MambaInverseController": {
-            "model": load_model(MambaInverseController,"src/seq_control/results/2026-09-14/2026-09-14_13-58-01/ChemostatPlant_ic/MambaInverseController/fold_1/2026-09-14_13-58-01_best_fold_model.pt"),
-            "x_scaler" : load_scaler("src/seq_control/results/2026-09-14/2026-09-14_13-58-01/ChemostatPlant_ic/MambaInverseController/fold_1/scalers/2026-09-14_13-58-01_scaler_x.pkl"),
-            "y_scaler": load_scaler("src/seq_control/results/2026-09-14/2026-09-14_13-58-01/ChemostatPlant_ic/MambaInverseController/fold_1/scalers/2026-09-14_13-58-01_scaler_y.pkl")
         },
-        "LSTMInverseController": {
-            "model": load_model(LSTMInverseController,"src/seq_control/results/2026-09-14/2026-09-14_13-58-01/ChemostatPlant_ic/LSTMInverseController/fold_1/2026-09-14_13-58-01_best_fold_model.pt"),
-            "x_scaler" : load_scaler("src/seq_control/results/2026-09-14/2026-09-14_13-58-01/ChemostatPlant_ic/LSTMInverseController/fold_1/scalers/2026-09-14_13-58-01_scaler_x.pkl"),
-            "y_scaler": load_scaler("src/seq_control/results/2026-09-14/2026-09-14_13-58-01/ChemostatPlant_ic/LSTMInverseController/fold_1/scalers/2026-09-14_13-58-01_scaler_y.pkl")
+        "TrophophasePlant": {
+            "plant" : TrophophasePlant(hyperparam_config=hyperparam_config_TrophophasePlant),
+            "val_data_io": torch.load(f"src/seq_control/results/{REF_data_date}/{REF_data_date_and_time}/TrophophasePlant/io/dataset/{REF_data_date_and_time}_val_io_data.pt"),
+            "y_ref": [generate_exponential_decay_trajectory(
+                    hyperparam_config_TrophophasePlant["validation_trajectories"]["seq_len"],
+                    hyperparam_config_TrophophasePlant["training_data_cfg"]["dt"],
+                    hyperparam_config_TrophophasePlant["validation_trajectories"]["y_start"][0],
+                    hyperparam_config_TrophophasePlant["validation_trajectories"]["y_target"][0],
+                    hyperparam_config_TrophophasePlant["validation_trajectories"]["tau"][0]
+                    )],
+            "models_dict": {
+                "MambaInverseController": {
+                    "model": load_model(MambaInverseController,f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/TrophophasePlant_ic/MambaInverseController/fold_1/{REF_mod_date_and_time}_best_fold_model.pt"),
+                    "x_scaler" : load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/TrophophasePlant_ic/MambaInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_x.pkl"),
+                    "y_scaler": load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/TrophophasePlant_ic/MambaInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_y.pkl")
+                },
+                "LSTMInverseController": {
+                    "model": load_model(LSTMInverseController,f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/TrophophasePlant_ic/LSTMInverseController/fold_1/{REF_mod_date_and_time}_best_fold_model.pt"),
+                    "x_scaler" : load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/TrophophasePlant_ic/LSTMInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_x.pkl"),
+                    "y_scaler": load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/TrophophasePlant_ic/LSTMInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_y.pkl")    
+                },
+                "TransformerInverseController": {
+                    "model": load_model(TransformerInverseController,f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/TrophophasePlant_ic/TransformerInverseController/fold_1/{REF_mod_date_and_time}_best_fold_model.pt"),
+                    "x_scaler" : load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/TrophophasePlant_ic/TransformerInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_x.pkl"),
+                    "y_scaler": load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/TrophophasePlant_ic/TransformerInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_y.pkl")
+                },
+                "ESNInverseController": {
+                    "model": load_model_esn(ESNInverseController, f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/TrophophasePlant_ic/ESNInverseController/fold_1/{REF_mod_date_and_time}_best_fold_model.pkl"),
+                    "x_scaler" : load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/TrophophasePlant_ic/ESNInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_x.pkl"),
+                    "y_scaler": load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/TrophophasePlant_ic/ESNInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_y.pkl")
+                }
+            }
         },
-        "TransformerInverseController": {
-            "model": load_model(TransformerInverseController,"src/seq_control/results/2026-09-14/2026-09-14_13-58-01/ChemostatPlant_ic/TransformerInverseController/fold_1/2026-09-14_13-58-01_best_fold_model.pt"),
-            "x_scaler" : load_scaler("src/seq_control/results/2026-09-14/2026-09-14_13-58-01/ChemostatPlant_ic/TransformerInverseController/fold_1/scalers/2026-09-14_13-58-01_scaler_x.pkl"),
-            "y_scaler": load_scaler("src/seq_control/results/2026-09-14/2026-09-14_13-58-01/ChemostatPlant_ic/TransformerInverseController/fold_1/scalers/2026-09-14_13-58-01_scaler_y.pkl")
+        "IdiophasePlant": {
+            "plant" : IdiophasePlant(hyperparam_config=hyperparam_config_IdiophasePlant),
+            "val_data_io": torch.load(f"src/seq_control/results/{REF_data_date}/{REF_data_date_and_time}/IdiophasePlant/io/dataset/{REF_data_date_and_time}_val_io_data.pt"),
+            "y_ref": [
+                generate_exponential_decay_trajectory(
+                    hyperparam_config_IdiophasePlant["validation_trajectories"]["seq_len"],
+                    hyperparam_config_IdiophasePlant["training_data_cfg"]["dt"],
+                    hyperparam_config_IdiophasePlant["validation_trajectories"]["y_start"][0],
+                    hyperparam_config_IdiophasePlant["validation_trajectories"]["y_target"][0],
+                    hyperparam_config_IdiophasePlant["validation_trajectories"]["tau"][0]
+                    ),
+                generate_exponential_decay_trajectory(
+                    hyperparam_config_IdiophasePlant["validation_trajectories"]["seq_len"],
+                    hyperparam_config_IdiophasePlant["training_data_cfg"]["dt"],
+                    hyperparam_config_IdiophasePlant["validation_trajectories"]["y_start"][1],
+                    hyperparam_config_IdiophasePlant["validation_trajectories"]["y_target"][1],
+                    hyperparam_config_IdiophasePlant["validation_trajectories"]["tau"][1]
+                    )
+                ],
+            "models_dict": {
+                "MambaInverseController": {
+                    "model": load_model(MambaInverseController,f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/IdiophasePlant_ic/MambaInverseController/fold_1/{REF_mod_date_and_time}_best_fold_model.pt"),
+                    "x_scaler" : load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/IdiophasePlant_ic/MambaInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_x.pkl"),
+                    "y_scaler": load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/IdiophasePlant_ic/MambaInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_y.pkl")
+                },
+                "LSTMInverseController": {
+                    "model": load_model(LSTMInverseController,f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/IdiophasePlant_ic/LSTMInverseController/fold_1/{REF_mod_date_and_time}_best_fold_model.pt"),
+                    "x_scaler" : load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/IdiophasePlant_ic/LSTMInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_x.pkl"),
+                    "y_scaler": load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/IdiophasePlant_ic/LSTMInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_y.pkl")    
+                },
+                "TransformerInverseController": {
+                    "model": load_model(TransformerInverseController,f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/IdiophasePlant_ic/TransformerInverseController/fold_1/{REF_mod_date_and_time}_best_fold_model.pt"),
+                    "x_scaler" : load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/IdiophasePlant_ic/TransformerInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_x.pkl"),
+                    "y_scaler": load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/IdiophasePlant_ic/TransformerInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_y.pkl")
+                },
+                "ESNInverseController": {
+                    "model": load_model_esn(ESNInverseController, f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/IdiophasePlant_ic/ESNInverseController/fold_1/{REF_mod_date_and_time}_best_fold_model.pkl"),
+                    "x_scaler" : load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/IdiophasePlant_ic/ESNInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_x.pkl"),
+                    "y_scaler": load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/IdiophasePlant_ic/ESNInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_y.pkl")
+                }
+            }
         },
-        "ESNInverseController": {
-            "model": load_model_esn(ESNInverseController, "src/seq_control/results/2026-09-14/2026-09-14_13-58-01/ChemostatPlant_ic/ESNInverseController/fold_1/2026-09-14_13-58-01_best_fold_model.pkl"),
-            "x_scaler" : load_scaler("src/seq_control/results/2026-09-14/2026-09-14_13-58-01/ChemostatPlant_ic/ESNInverseController/fold_1/scalers/2026-09-14_13-58-01_scaler_x.pkl"),
-            "y_scaler": load_scaler("src/seq_control/results/2026-09-14/2026-09-14_13-58-01/ChemostatPlant_ic/ESNInverseController/fold_1/scalers/2026-09-14_13-58-01_scaler_y.pkl")
+        "CoCultivationPlant": {
+            "plant" : CoCultivationPlant(hyperparam_config=hyperparam_config_CoCultivationPlant),
+            "val_data_io": torch.load(f"src/seq_control/results/{REF_data_date}/{REF_data_date_and_time}/CoCultivationPlant/io/dataset/{REF_data_date_and_time}_val_io_data.pt"),
+            "y_ref": [generate_exponential_decay_trajectory(
+                    hyperparam_config_CoCultivationPlant["validation_trajectories"]["seq_len"],
+                    hyperparam_config_CoCultivationPlant["training_data_cfg"]["dt"],
+                    hyperparam_config_CoCultivationPlant["validation_trajectories"]["y_start"][0],
+                    hyperparam_config_CoCultivationPlant["validation_trajectories"]["y_target"][0],
+                    hyperparam_config_CoCultivationPlant["validation_trajectories"]["tau"][0]
+                    ),
+                generate_exponential_decay_trajectory(
+                    hyperparam_config_CoCultivationPlant["validation_trajectories"]["seq_len"],
+                    hyperparam_config_CoCultivationPlant["training_data_cfg"]["dt"],
+                    hyperparam_config_CoCultivationPlant["validation_trajectories"]["y_start"][1],
+                    hyperparam_config_CoCultivationPlant["validation_trajectories"]["y_target"][1],
+                    hyperparam_config_CoCultivationPlant["validation_trajectories"]["tau"][1]
+                    )
+                ],
+            "models_dict": {
+                "MambaInverseController": {
+                    "model": load_model(MambaInverseController,f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/CoCultivationPlant_ic/MambaInverseController/fold_1/{REF_mod_date_and_time}_best_fold_model.pt"),
+                    "x_scaler" : load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/CoCultivationPlant_ic/MambaInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_x.pkl"),
+                    "y_scaler": load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/CoCultivationPlant_ic/MambaInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_y.pkl")
+                },
+                "LSTMInverseController": {
+                    "model": load_model(LSTMInverseController,f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/CoCultivationPlant_ic/LSTMInverseController/fold_1/{REF_mod_date_and_time}_best_fold_model.pt"),
+                    "x_scaler" : load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/CoCultivationPlant_ic/LSTMInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_x.pkl"),
+                    "y_scaler": load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/CoCultivationPlant_ic/LSTMInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_y.pkl")    
+                },
+                "TransformerInverseController": {
+                    "model": load_model(TransformerInverseController,f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/CoCultivationPlant_ic/TransformerInverseController/fold_1/{REF_mod_date_and_time}_best_fold_model.pt"),
+                    "x_scaler" : load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/CoCultivationPlant_ic/TransformerInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_x.pkl"),
+                    "y_scaler": load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/CoCultivationPlant_ic/TransformerInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_y.pkl")
+                },
+                "ESNInverseController": {
+                    "model": load_model_esn(ESNInverseController, f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/CoCultivationPlant_ic/ESNInverseController/fold_1/{REF_mod_date_and_time}_best_fold_model.pkl"),
+                    "x_scaler" : load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/CoCultivationPlant_ic/ESNInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_x.pkl"),
+                    "y_scaler": load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/CoCultivationPlant_ic/ESNInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_y.pkl")
+                }
+            }
+        },
+        "IndForProteinProductionPlant" : {
+            "plant" : IndForProteinProductionPlant(hyperparam_config=hyperparam_config_IndForProteinProductionPlant),
+            "val_data_io": torch.load(f"src/seq_control/results/{REF_data_date}/{REF_data_date_and_time}/IndForProteinProductionPlant/io/dataset/{REF_data_date_and_time}_val_io_data.pt"),
+            "y_ref": [generate_exponential_decay_trajectory(
+                    hyperparam_config_IndForProteinProductionPlant["validation_trajectories"]["seq_len"],
+                    hyperparam_config_IndForProteinProductionPlant["training_data_cfg"]["dt"],
+                    hyperparam_config_IndForProteinProductionPlant["validation_trajectories"]["y_start"][0],
+                    hyperparam_config_IndForProteinProductionPlant["validation_trajectories"]["y_target"][0],
+                    hyperparam_config_IndForProteinProductionPlant["validation_trajectories"]["tau"][0]
+                    ),
+                generate_exponential_decay_trajectory(
+                    hyperparam_config_IndForProteinProductionPlant["validation_trajectories"]["seq_len"],
+                    hyperparam_config_IndForProteinProductionPlant["training_data_cfg"]["dt"],
+                    hyperparam_config_IndForProteinProductionPlant["validation_trajectories"]["y_start"][1],
+                    hyperparam_config_IndForProteinProductionPlant["validation_trajectories"]["y_target"][1],
+                    hyperparam_config_IndForProteinProductionPlant["validation_trajectories"]["tau"][1]
+                    ),
+                generate_exponential_decay_trajectory(
+                    hyperparam_config_IndForProteinProductionPlant["validation_trajectories"]["seq_len"],
+                    hyperparam_config_IndForProteinProductionPlant["training_data_cfg"]["dt"],
+                    hyperparam_config_IndForProteinProductionPlant["validation_trajectories"]["y_start"][2],
+                    hyperparam_config_IndForProteinProductionPlant["validation_trajectories"]["y_target"][2],
+                    hyperparam_config_IndForProteinProductionPlant["validation_trajectories"]["tau"][2]
+                    )
+                ],
+            "models_dict": {
+                "MambaInverseController": {
+                    "model": load_model(MambaInverseController,f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/IndForProteinProductionPlant_ic/MambaInverseController/fold_1/{REF_mod_date_and_time}_best_fold_model.pt"),
+                    "x_scaler" : load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/IndForProteinProductionPlant_ic/MambaInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_x.pkl"),
+                    "y_scaler": load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/IndForProteinProductionPlant_ic/MambaInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_y.pkl")
+                },
+                "LSTMInverseController": {
+                    "model": load_model(LSTMInverseController,f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/IndForProteinProductionPlant_ic/LSTMInverseController/fold_1/{REF_mod_date_and_time}_best_fold_model.pt"),
+                    "x_scaler" : load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/IndForProteinProductionPlant_ic/LSTMInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_x.pkl"),
+                    "y_scaler": load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/IndForProteinProductionPlant_ic/LSTMInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_y.pkl")    
+                },
+                "TransformerInverseController": {
+                    "model": load_model(TransformerInverseController,f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/IndForProteinProductionPlant_ic/TransformerInverseController/fold_1/{REF_mod_date_and_time}_best_fold_model.pt"),
+                    "x_scaler" : load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/IndForProteinProductionPlant_ic/TransformerInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_x.pkl"),
+                    "y_scaler": load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/IndForProteinProductionPlant_ic/TransformerInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_y.pkl")
+                },
+                "ESNInverseController": {
+                    "model": load_model_esn(ESNInverseController, f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/IndForProteinProductionPlant_ic/ESNInverseController/fold_1/{REF_mod_date_and_time}_best_fold_model.pkl"),
+                    "x_scaler" : load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/IndForProteinProductionPlant_ic/ESNInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_x.pkl"),
+                    "y_scaler": load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/IndForProteinProductionPlant_ic/ESNInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_y.pkl")
+                }
+            },
         }
     }
 
+    for pl in plant_dict.keys():
+        print(f"Validating plant: {pl}")
+        validate_multiple_controllers(
+            models_dict=plant_dict[pl]["models_dict"],
+            plant=plant_dict[pl]["plant"],
+            dataset_io=plant_dict[pl]["val_data_io"],
+            hyperparam_config=plant_dict[pl]["plant"].hyperparam_config,
+            dirname=f"results/multi_model_validation_{pl}",
+            start_idx=2,
+            window_len=100,
+            mode="open_loop",
+            show_plots=True
+        )
+
+        
     # validate_multiple_controllers(
-    #     models_dict=model_dict,
+    #     models_dict=plant_dict["models_dict"],
     #     plant=plant_dict["TrophophasePlant"]["plant"],
     #     dataset_io=plant_dict["TrophophasePlant"]["val_data_io"],
     #     hyperparam_config=plant_dict["TrophophasePlant"]["plant"].hyperparam_config,
@@ -131,17 +270,20 @@ def main():
     #         mode="open_loop"
     #     )
 
-    validate_controller_ext_ref_multi(
-        models_dict=model_dict,
-        plant=plant,
-        y_ref=r_static_y_1,
-        hyperparam_config=plant.hyperparam_config,
-        dirname="./plots_ref_multi",
-        start_idx=2,
-        u_ref=None,
-        mode="closed_loop",
-        show_plots=False
-    )
+    # for pl in plant_dict.keys():
+    #     print(f"Validating plant: {pl}")
+    #     validate_controller_ext_ref_multi(
+    #         models_dict=plant_dict[pl]["models_dict"],
+    #         plant=plant_dict[pl]["plant"],
+    #         y_ref=plant_dict[pl]["y_ref"],
+    #         hyperparam_config=plant_dict[pl]["plant"].hyperparam_config,
+    #         dirname=f"./plots_ref_multi_{pl}",
+    #         start_idx=20,
+    #         window_len=10,
+    #         mode="closed_loop",
+    #         show_plots=False
+    #     )
+
 
     # validate_controller(
     #     model = model_dict["MambaInverseController"]["model"],

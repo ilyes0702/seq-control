@@ -249,9 +249,9 @@ hyperparam_config_ChemostatPlant = {
 
     # Default hyperparameters for Mamba-based sequence models
     "mamba": {
-        "d_state": 16,                      
-        "expand": 4,
-        "d_conv" : 2
+        "d_state": 31,                      
+        "expand": 9,
+        "d_conv" : 9
     },
     # Hyperparameter space of the Mamba sequence model for hyperparameter tuning via Optuna
     "mamba_param_space" : {
@@ -294,13 +294,14 @@ hyperparam_config_ChemostatPlant = {
 
     "validation_trajectories" : {
         "batch_size": 10,
-        "seq_len"   : 401,
-        "set_point" : 0.25,
-        "amplitude" : 0.04,
-        "period"    : 20.0,
+        "seq_len"   : 301,
 
-        "y_start"   : 0.5,
-        "y_target"  : 0.2,
-        "tau"       : 0.1         
+        "set_point" : [0.19],
+        "amplitude" : [0.04],
+        "period"    : [20.0],
+
+        "y_start"   : [0.3],
+        "y_target"  : [0.19],
+        "tau"       : [0.1]         
     },
 }

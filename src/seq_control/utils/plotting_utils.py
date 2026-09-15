@@ -608,8 +608,8 @@ def plot_closed_loop_trajectories(
     y_ref,
     y_achieved,
     states_achieved,
-    states_ref,
-    plant,
+    states_ref=None,
+    plant=None,
     dirname="./plots",
     show=False
 ):
@@ -618,6 +618,7 @@ def plot_closed_loop_trajectories(
     Outputs (y), and States (x) for ALL sequences in the dataset using `plot_stacked`.
     Dynamically uses axis labels and units from `plant.get_plot_config()`.
     """
+    os.makedirs(dirname, exist_ok=True)
     num_sequences = u_ref.shape[0]
     control_dim = u_ref.shape[-1]
     output_dim = y_ref.shape[-1]
@@ -626,21 +627,52 @@ def plot_closed_loop_trajectories(
     # --- Extract Plant Plot Configuration ---
     plot_config = plant.get_plot_config() if (plant is not None and hasattr(plant, "get_plot_config")) else None
 
-    xlabel = "Time [s]"
+    xlabel = r"$t$ [h]"
     u_cfg, y_cfg, x_cfg = {}, {}, {}
 
     if plot_config:
         for item in plot_config:
             cols = item.get("cols", [])
-            if any(c == "t" for c in cols):
-                xl = item.get("xlabel", item.get("labels", ["Time [s]"]))
-                xlabel = xl[0] if isinstance(xl, list) else xl
-            elif any(c == "u" or c.startswith("u") for c in cols):
+            cols_lower = [str(c).lower() for c in cols]
+
+            # Match xlabel
+            if "xlabel" in item:
+                xl = item["xlabel"]
+                xlabel = xl[0] if isinstance(xl, (list, tuple)) else xl
+            elif any(c == "t" for c in cols_lower):
+                xl = item.get("labels", [r"$t$ [h]"])
+                xlabel = xl[0] if isinstance(xl, (list, tuple)) else xl
+
+            # Match channels by prefix
+            if any(c.startswith("u") for c in cols_lower) and not u_cfg:
                 u_cfg = item
-            elif any(c == "y" or c.startswith("y") for c in cols):
+            elif any(c.startswith("y") for c in cols_lower) and not y_cfg:
                 y_cfg = item
-            elif any(c == "x" or c.startswith("x") for c in cols):
+            elif any(c.startswith("x") or "state" in c for c in cols_lower) and not x_cfg:
                 x_cfg = item
+
+    def _get_channel_labels(cfg, ch, prefix, dim):
+        """Extracts (y_title, base_legend_label) for a given channel."""
+        labels = cfg.get("ylabel", cfg.get("labels", []))
+        if isinstance(labels, str):
+            labels = [labels]
+
+        # Extract title (with units)
+        if ch < len(labels):
+            y_title = labels[ch]
+        else:
+            y_title = f"{prefix.upper()} channel ${prefix}_{{{ch+1}}}$"
+
+        # Extract base label for legend (stripped of units if brackets exist)
+        cols = cfg.get("cols", [])
+        if ch < len(cols):
+            base_lbl = f"${cols[ch]}$"
+        elif "[" in y_title:
+            base_lbl = y_title.split("[")[0].strip()
+        else:
+            base_lbl = f"${prefix}_{{{ch+1}}}$"
+
+        return y_title, base_lbl
 
     # --- Render Plots for Each Sequence ---
     for trace_idx in range(num_sequences):
@@ -656,7 +688,7 @@ def plot_closed_loop_trajectories(
         for ch in range(control_dim):
             y_title, base_lbl = _get_channel_labels(u_cfg, ch, "u", control_dim)
             signals.append([u_ref[trace_idx, :, ch], u_applied[trace_idx, :, ch]])
-            labels.append([f"Reference", f"Model prediction"])
+            labels.append(["Reference", "Model prediction"])
             ylabels.append(y_title)
 
         # ----------------------------------------------------
@@ -723,47 +755,68 @@ def plot_closed_loop_trajectories_multi(
     model_names = list(u_applied_dict.keys())
 
     # --- EXTRACT METADATA FROM PLANT IF AVAILABLE ---
-    xlabel_str = "Time [s]"
+    xlabel_str = r"$t$ [h]"
     y_ylabels_meta, u_ylabels_meta, x_ylabels_meta = [], [], []
 
     if plant is not None and hasattr(plant, "get_plot_config"):
         plot_cfg = plant.get_plot_config()
         
-        # Extract xlabel
-        t_cfg = next((c for c in plot_cfg if "xlabel" in c or "t" in c.get("cols", [])), None)
-        if t_cfg and "xlabel" in t_cfg:
-            xl = t_cfg["xlabel"]
-            xlabel_str = xl[0] if isinstance(xl, (list, tuple)) else xl
+        def extract_labels(cfg_entry):
+            """Extract list of strings from 'ylabel' or 'labels' entry."""
+            labels = cfg_entry.get("ylabel", cfg_entry.get("labels", []))
+            if isinstance(labels, str):
+                return [labels]
+            elif isinstance(labels, (list, tuple)):
+                return list(labels)
+            return []
 
-        # Extract ylabels
-        y_cfg = next((c for c in plot_cfg if "y" in c.get("cols", [])), None)
-        u_cfg = next((c for c in plot_cfg if "u" in c.get("cols", [])), None)
-        x_cfg = next((c for c in plot_cfg if "x" in c.get("cols", []) or "states" in c.get("cols", [])), None)
+        # Extract xlabel if provided anywhere in config
+        for entry in plot_cfg:
+            if "xlabel" in entry:
+                xl = entry["xlabel"]
+                xlabel_str = xl[0] if isinstance(xl, (list, tuple)) else xl
+                break
 
-        if y_cfg and "ylabel" in y_cfg:
-            yl = y_cfg["ylabel"]
-            y_ylabels_meta = yl if isinstance(yl, list) else [yl] * output_dim
-        if u_cfg and "ylabel" in u_cfg:
-            yl = u_cfg["ylabel"]
-            u_ylabels_meta = yl if isinstance(yl, list) else [yl] * control_dim
-        if x_cfg and "ylabel" in x_cfg:
-            yl = x_cfg["ylabel"]
-            x_ylabels_meta = yl if isinstance(yl, list) else [yl] * state_dim
+        # Parse labels based on column prefix matches (e.g., 'x1', 'x2', 'y', 'u')
+        for entry in plot_cfg:
+            cols = entry.get("cols", [])
+            cols_lower = [str(c).lower() for c in cols]
+
+            # Match outputs (e.g. 'y', 'y1')
+            if any(c.startswith("y") for c in cols_lower) and not y_ylabels_meta:
+                y_ylabels_meta = extract_labels(entry)
+
+            # Match controls (e.g. 'u', 'u1')
+            if any(c.startswith("u") for c in cols_lower) and not u_ylabels_meta:
+                u_ylabels_meta = extract_labels(entry)
+
+            # Match states (e.g. 'x', 'x1', 'states')
+            if any(c.startswith("x") or "state" in c for c in cols_lower) and not x_ylabels_meta:
+                x_ylabels_meta = extract_labels(entry)
 
     # --- BUILD Y-AXIS LABELS LIST FOR ALL SUBPLOT ROWS ---
     ylabels_list = []
     
     # Output y-labels
     for ch in range(output_dim):
-        ylabels_list.append(y_ylabels_meta[ch] if ch < len(y_ylabels_meta) else f"Output $y_{{{ch+1}}}$")
+        if ch < len(y_ylabels_meta):
+            ylabels_list.append(y_ylabels_meta[ch])
+        else:
+            ylabels_list.append(f"Output $y_{{{ch+1}}}$")
 
     # Control u-labels
     for ch in range(control_dim):
-        ylabels_list.append(u_ylabels_meta[ch] if ch < len(u_ylabels_meta) else f"Control $u_{{{ch+1}}}$")
+        if ch < len(u_ylabels_meta):
+            ylabels_list.append(u_ylabels_meta[ch])
+        else:
+            ylabels_list.append(f"Control $u_{{{ch+1}}}$")
 
     # State x-labels
     for ch in range(state_dim):
-        ylabels_list.append(x_ylabels_meta[ch] if ch < len(x_ylabels_meta) else f"State $x_{{{ch+1}}}$")
+        if ch < len(x_ylabels_meta):
+            ylabels_list.append(x_ylabels_meta[ch])
+        else:
+            ylabels_list.append(f"State $x_{{{ch+1}}}$")
 
     # --- RENDER STACKED PLOT FOR EACH SEQUENCE ---
     for seq_idx in range(N):

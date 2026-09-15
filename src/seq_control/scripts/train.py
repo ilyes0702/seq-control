@@ -32,31 +32,37 @@ if __name__ == "__main__":
     plant_dict =    {
         "ChemostatPlant": {
             "plant" : ChemostatPlant(hyperparam_config=hyperparam_config_ChemostatPlant),
-            "train_data_sw_ic": torch.load("src/seq_control/results/2026-09-13/2026-09-13_11-19-22/ChemostatPlant/sw_ic/dataset/2026-09-13_11-19-22_sw_ic_data.pt", 
+            "train_data_sw_ic": torch.load("src/seq_control/results/2026-09-15/2026-09-15_16-50-06/ChemostatPlant/sw_ic/dataset/2026-09-15_16-50-06_sw_ic_training_data.pt", 
             weights_only=True),
-            "train_data_sysid": torch.load("src/seq_control/results/2026-09-13/2026-09-13_11-19-22/ChemostatPlant/sw_sysid/dataset/2026-09-13_11-19-22_sw_sysid_training_data.pt", weights_only=True)
+            "val_data_sw_ic": torch.load("src/seq_control/results/2026-09-15/2026-09-15_16-50-06/ChemostatPlant/sw_ic/dataset/2026-09-15_16-50-06_sw_ic_validation_data.pt", 
+            weights_only=True),
+            # "train_data_sysid": torch.load("src/seq_control/results/2026-09-13/2026-09-13_11-19-22/ChemostatPlant/sw_sysid/dataset/2026-09-13_11-19-22_sw_sysid_training_data.pt", weights_only=True)
         },
-        # "TrophophasePlant": {
-        #     "plant" : TrophophasePlant(hyperparam_config=hyperparam_config_TrophophasePlant),
-        #     "train_data_sw_ic": torch.load("src/seq_control/results/2026-09-13/2026-09-13_11-19-22/TrophophasePlant/sw_ic/dataset/2026-09-13_11-19-22_sw_ic_training_data.pt", 
-        #     weights_only=True),
-        #     "train_data_sysid": torch.load("src/seq_control/results/2026-09-13/2026-09-13_11-19-22/TrophophasePlant/sw_sysid/dataset/2026-09-13_11-19-22_sw_sysid_training_data.pt", weights_only=True)
-        # },
-        # "IdiophasePlant": {
-        #     "plant" : IdiophasePlant(hyperparam_config=hyperparam_config_IdiophasePlant),
-        #     "train_data_sw_ic": torch.load("src/seq_control/results/2026-09-13/2026-09-13_11-19-22/IdiophasePlant/sw_ic/dataset/2026-09-13_11-19-22_sw_ic_training_data.pt", weights_only=True),
-        #     "train_data_sysid": torch.load("src/seq_control/results/2026-09-13/2026-09-13_11-19-22/IdiophasePlant/sw_sysid/dataset/2026-09-13_11-19-22_sw_sysid_training_data.pt", weights_only=True)
-        # },
-        # "CoCultivationPlant": {
-        #     "plant" : CoCultivationPlant(hyperparam_config=hyperparam_config_CoCultivationPlant),
-        #     "train_data_sw_ic": torch.load("src/seq_control/results/2026-09-13/2026-09-13_11-19-22/CoCultivationPlant/sw_ic/dataset/2026-09-13_11-19-22_sw_ic_training_data.pt", weights_only=True),
-        #     "train_data_sysid": torch.load("src/seq_control/results/2026-09-13/2026-09-13_11-19-22/CoCultivationPlant/sw_sysid/dataset/2026-09-13_11-19-22_sw_sysid_training_data.pt", weights_only=True)
-        # },
-        # "IndForProteinProductionPlant" : {
-        #     "plant" : IndForProteinProductionPlant(hyperparam_config=hyperparam_config_IndForProteinProductionPlant),
-        #     "train_data_sw_ic": torch.load("src/seq_control/results/2026-09-13/2026-09-13_11-19-22/IndForProteinProductionPlant/sw_ic/dataset/2026-09-13_11-19-22_sw_ic_training_data.pt", weights_only=True),
-        #     "train_data_sysid": torch.load("src/seq_control/results/2026-09-13/2026-09-13_11-19-22/IndForProteinProductionPlant/sw_sysid/dataset/2026-09-13_11-19-22_sw_sysid_training_data.pt", weights_only=True)
-        # }
+        "TrophophasePlant": {
+            "plant" : TrophophasePlant(hyperparam_config=hyperparam_config_TrophophasePlant),
+            "train_data_sw_ic": torch.load("src/seq_control/results/2026-09-15/2026-09-15_16-50-06/TrophophasePlant/sw_ic/dataset/2026-09-15_16-50-06_sw_ic_training_data.pt", 
+            weights_only=True),
+            "val_data_sw_ic": torch.load("src/seq_control/results/2026-09-15/2026-09-15_16-50-06/TrophophasePlant/sw_ic/dataset/2026-09-15_16-50-06_sw_ic_validation_data.pt", 
+            weights_only=True),
+            # "train_data_sysid": torch.load("src/seq_control/results/2026-09-13/2026-09-13_11-19-22/TrophophasePlant/sw_sysid/dataset/2026-09-13_11-19-22_sw_sysid_training_data.pt", weights_only=True)
+        },
+        "IdiophasePlant": {
+            "plant" : IdiophasePlant(hyperparam_config=hyperparam_config_IdiophasePlant),
+            "train_data_sw_ic": torch.load("src/seq_control/results/2026-09-15/2026-09-15_16-50-06/IdiophasePlant/sw_ic/dataset/2026-09-15_16-50-06_sw_ic_training_data.pt", weights_only=True),
+            "val_data_sw_ic": torch.load("src/seq_control/results/2026-09-15/2026-09-15_16-50-06/IdiophasePlant/sw_ic/dataset/2026-09-15_16-50-06_sw_ic_validation_data.pt", weights_only=True),
+            # "train_data_sysid": torch.load("src/seq_control/results/2026-09-13/2026-09-13_11-19-22/IdiophasePlant/sw_sysid/dataset/2026-09-13_11-19-22_sw_sysid_training_data.pt", weights_only=True)
+        },
+        "CoCultivationPlant": {
+            "plant" : CoCultivationPlant(hyperparam_config=hyperparam_config_CoCultivationPlant),
+            "train_data_sw_ic": torch.load("src/seq_control/results/2026-09-15/2026-09-15_16-50-06/CoCultivationPlant/sw_ic/dataset/2026-09-15_16-50-06_sw_ic_training_data.pt", weights_only=True),
+            "val_data_sw_ic": torch.load("src/seq_control/results/2026-09-15/2026-09-15_16-50-06/CoCultivationPlant/sw_ic/dataset/2026-09-15_16-50-06_sw_ic_validation_data.pt", weights_only=True),
+            # "train_data_sysid": torch.load("src/seq_control/results/2026-09-13/2026-09-13_11-19-22/CoCultivationPlant/sw_sysid/dataset/2026-09-13_11-19-22_sw_sysid_training_data.pt", weights_only=True)
+        },
+        "IndForProteinProductionPlant" : {
+            "plant" : IndForProteinProductionPlant(hyperparam_config=hyperparam_config_IndForProteinProductionPlant),
+            "train_data_sw_ic": torch.load("src/seq_control/results/2026-09-15/2026-09-15_16-50-06/IndForProteinProductionPlant/sw_ic/dataset/2026-09-15_16-50-06_sw_ic_training_data.pt", weights_only=True),
+            "val_data_sw_ic": torch.load("src/seq_control/results/2026-09-15/2026-09-15_16-50-06/IndForProteinProductionPlant/sw_ic/dataset/2026-09-15_16-50-06_sw_ic_validation_data.pt", weights_only=True)
+        }
     }
 
     # Define inverse controller architectures to test
@@ -91,7 +97,8 @@ if __name__ == "__main__":
                         X_raw=train_data["X_raw"],
                         Y_raw=train_data["Y_raw"],
                         hyperparam_config=hyperparam_config,
-                        dirname=f"{dirname}/ESNInverseController"
+                        dirname=f"{dirname}/ESNInverseController",
+                        save_test_plots=False
                     )
             else:
                 for plant_name, plant_data in plant_dict.items():

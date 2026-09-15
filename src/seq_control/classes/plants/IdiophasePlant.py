@@ -318,7 +318,7 @@ hyperparam_config_IdiophasePlant = {
     },
 
     "train": {
-        "k_folds": 5,
+        "k_folds": 2,
         "epochs": 50,
         "lr": 1e-3,
         "device": "cuda",
@@ -335,9 +335,9 @@ hyperparam_config_IdiophasePlant = {
         
     # Default hyperparameters for Mamba-based sequence models
     "mamba": {
-            "d_state": 16,                      
-            "expand": 4,
-            "d_conv" : 2
+            "d_state": 31,                      
+            "expand": 9,
+            "d_conv" : 9
         },
     # Hyperparameter space of the Mamba sequence model for hyperparameter tuning via Optuna
     "mamba_param_space" : {
@@ -383,13 +383,14 @@ hyperparam_config_IdiophasePlant = {
 
     "validation_trajectories" : {
         "batch_size": 10,
-        "seq_len"   : 401,
-        "set_point" : 0.25,
-        "amplitude" : 0.04,
-        "period"    : 20.0,
+        "seq_len"   : 2001,
 
-        "y_start"   : 0.5,
-        "y_target"  : 0.2,
-        "tau"       : 0.1         
+        "set_point" : [0.015, 50.0/170.0],
+        "amplitude" : [0.04, 0.02],
+        "period"    : [20.0, 20.0],
+
+        "y_start"   : [0.12, 0.0],
+        "y_target"  : [0.015, 50.0/170.0],
+        "tau"       : [0.1, 0.1]         
     },
     }
