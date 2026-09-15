@@ -241,7 +241,7 @@ def main():
             dirname=f"results/multi_model_validation_{pl}",
             start_idx=2,
             window_len=100,
-            mode="open_loop",
+            mode="closed_loop",
             show_plots=True
         )
 

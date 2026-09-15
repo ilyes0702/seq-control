@@ -17,6 +17,31 @@ from seq_control.utils.plotting_utils import *
 from seq_control.utils.saving_and_loading_utils import *
 from seq_control.utils.general_utils import *
 
+import numpy as np
+
+def extract_mimo_control_bounds(hyperparam_config, control_dim):
+    """
+    Extracts per-channel control bounds u_min and u_max arrays of shape (control_dim,).
+    Falls back to -inf / +inf if bounds are not specified.
+    """
+    
+    training_data_cfg = hyperparam_config["training_data_cfg"]
+
+    u_min_list = []
+    u_max_list = []
+
+
+    for ch in range(1, control_dim + 1):
+        # 1. Look for channel-specific keys (e.g., 'u_1_hard_min')
+        ch_min = training_data_cfg[f"u_{ch}_hard_min"]
+        ch_max = training_data_cfg[f"u_{ch}_hard_max"]        
+        print(ch_min, ch_max)
+        # Use infinity for unconstrained channels
+        u_min_list.append(ch_min if ch_min is not None else -np.inf)
+        u_max_list.append(ch_max if ch_max is not None else np.inf)
+
+    return np.array(u_min_list, dtype=np.float32), np.array(u_max_list, dtype=np.float32)
+
 #=== FUNCTION TO VALIDATE MULTPILE CONTROLLERS ===#
 def validate_multiple_controllers(
     models_dict,          # Dict[str, Dict[str, Any]] containing "Model", "x_scaler", "y_scaler"
@@ -49,19 +74,18 @@ def validate_multiple_controllers(
     nu_y = hyperparam_config["training_data_cfg"]["nu_y"]
     nu_u = hyperparam_config["training_data_cfg"]["nu_u"]
     
-    plant_cfg = hyperparam_config.get("plant", {})
-    u_min = plant_cfg.get("u_1_hard_min", None)
-    u_max = plant_cfg.get("u_1_hard_max", None)
+
 
     # --- LOAD REFERENCE DATASET ---
     u_ref_raw = dataset_io["u"].to(dtype=torch.float32)
     y_ref_raw = dataset_io["y"].to(dtype=torch.float32)
     states_raw = dataset_io["states"].to(dtype=torch.float32)
-
+    
     N, total_seq_len, output_dim = y_ref_raw.shape
     control_dim = u_ref_raw.shape[-1]
     end_idx = total_seq_len - 1
-
+    
+    
     y_ref_np = y_ref_raw.numpy()
     u_ref_np = u_ref_raw.numpy()
     has_state_ref = (states_raw.ndim == 3)
@@ -75,6 +99,9 @@ def validate_multiple_controllers(
     states_achieved_dict = {}
     summary_records = []
 
+    u_min_arr, u_max_arr = extract_mimo_control_bounds(
+        hyperparam_config, 
+        control_dim)
     # --- SIMULATION LOOP OVER EACH MODEL CONFIGURATION ---
     for model_name, model_cfg in models_dict.items():
         print(f"\n🧪 Simulating Model: '{model_name}' ({mode.upper()} Mode)...")
@@ -118,7 +145,9 @@ def validate_multiple_controllers(
             v_frames_scaled.append(v_k_scaled)
 
             u_k_np = u_ref_np[:, k, :]
+            u_k_np = np.clip(u_k_np, a_min=u_min_arr, a_max=u_max_arr)
             u_applied[:, k, :] = u_k_np
+
             u_k_tensor = torch.tensor(u_k_np, dtype=torch.float32, device=device)
 
             next_state, _ = plant.step(current_state, u_k_tensor, t=t_current)
@@ -162,9 +191,8 @@ def validate_multiple_controllers(
                 u_pred_last_scaled = u_pred_seq_scaled[:, -1, :]
 
             u_k_np = sy.inverse_transform(u_pred_last_scaled)
-            if u_min is not None or u_max is not None:
-                u_k_np = np.clip(u_k_np, a_min=u_min, a_max=u_max)
 
+            u_k_np = np.clip(u_k_np, a_min=u_min_arr, a_max=u_max_arr)
             u_applied[:, k, :] = u_k_np
             u_k_tensor = torch.tensor(u_k_np, dtype=torch.float32, device=device)
 
@@ -269,9 +297,9 @@ def validate_controller_ext_ref_multi(
     nu_y = hyperparam_config["training_data_cfg"]["nu_y"]
     nu_u = hyperparam_config["training_data_cfg"]["nu_u"]
 
-    plant_cfg = hyperparam_config.get("plant", {})
-    u_min = plant_cfg.get("u_1_hard_min", None)
-    u_max = plant_cfg.get("u_1_hard_max", None)
+
+
+    u_min_arr, u_max_arr = extract_mimo_control_bounds(hyperparam_config, control_dim)
 
     # --- 1. FORMAT REFERENCE TARGET (y_ref) ---
     def _to_3d_ref(ref):
@@ -367,6 +395,7 @@ def validate_controller_ext_ref_multi(
             v_frames_scaled.append(v_k_scaled)
 
             u_k_np = u_ref_np[:, k, :]
+            u_k_np = np.clip(u_k_np, a_min=u_min_arr, a_max=u_max_arr)
             u_applied[:, k, :] = u_k_np
             u_k_tensor = torch.tensor(u_k_np, dtype=torch.float32, device=device)
 
@@ -409,10 +438,8 @@ def validate_controller_ext_ref_multi(
                 u_pred_last_scaled = u_pred_seq_scaled[:, -1, :]
 
             u_k_np = scaler_y.inverse_transform(u_pred_last_scaled)
-
-            if u_min is not None or u_max is not None:
-                u_k_np = np.clip(u_k_np, a_min=u_min, a_max=u_max)
-
+            u_k_np = np.clip(u_k_np, a_min=u_min_arr, a_max=u_max_arr)
+            
             u_applied[:, k, :] = u_k_np
             u_k_tensor = torch.tensor(u_k_np, dtype=torch.float32, device=device)
 
@@ -586,9 +613,7 @@ def validate_controller_ext_ref(
     nu_y = hyperparam_config["training_data_cfg"]["nu_y"]
     nu_u = hyperparam_config["training_data_cfg"]["nu_u"]
 
-    plant_cfg = hyperparam_config.get("plant", {})
-    u_min = plant_cfg.get("u_1_hard_min", None)
-    u_max = plant_cfg.get("u_1_hard_max", None)
+    
 
     # --- 1. FORMAT REFERENCE TARGET (y_ref) ---
     if isinstance(y_ref, torch.Tensor):
@@ -607,6 +632,7 @@ def validate_controller_ext_ref(
     end_idx = total_seq_len - 1
     y_ref_np = y_ref_raw.numpy()
 
+    u_min_arr, u_max_arr = extract_mimo_control_bounds(hyperparam_config, control_dim)
     # --- 2. FORMAT CONTROL REFERENCE (u_ref) ---
     if u_ref is not None:
         if isinstance(u_ref, torch.Tensor):
@@ -659,6 +685,7 @@ def validate_controller_ext_ref(
         v_frames_scaled.append(v_k_scaled)
 
         u_k_np = u_ref_np[:, k, :]
+        u_k_np = np.clip(u_k_np, a_min=u_min_arr, a_max=u_max_arr)
         u_applied[:, k, :] = u_k_np
         u_k_tensor = torch.tensor(u_k_np, dtype=torch.float32, device=device)
 
@@ -695,8 +722,8 @@ def validate_controller_ext_ref(
         u_pred_last_scaled = u_pred_seq_scaled[:, -1, :]
         u_k_np = scaler_y.inverse_transform(u_pred_last_scaled.cpu().numpy())
 
-        if u_min is not None or u_max is not None:
-            u_k_np = np.clip(u_k_np, a_min=u_min, a_max=u_max)
+        
+        u_k_np = np.clip(u_k_np, a_min=u_min_arr, a_max=u_max_arr)
 
         u_applied[:, k, :] = u_k_np
         u_k_tensor = torch.tensor(u_k_np, dtype=torch.float32, device=device)
@@ -817,6 +844,8 @@ def validate_controller(
 
     v_frames_scaled = []
 
+    u_min_arr, u_max_arr = extract_mimo_control_bounds(hyperparam_config, control_dim)
+
     # --- 1. PHASE 1: WARM-UP (k = 0 to start_idx - 1) ---
     print(f"🔄 Executing warm-up (k=0 to {start_idx - 1}) using reference inputs...")
     for k in range(0, start_idx):
@@ -829,6 +858,7 @@ def validate_controller(
         v_frames_scaled.append(v_k_scaled)
 
         u_k_np = u_ref_np[:, k, :]
+        u_k_np = np.clip(u_k_np, a_min=u_min_arr, a_max=u_max_arr)
         u_applied[:, k, :] = u_k_np
         u_k_tensor = torch.tensor(u_k_np, dtype=torch.float32, device=device)
 
@@ -866,8 +896,8 @@ def validate_controller(
         u_pred_last_scaled = u_pred_seq_scaled[:, -1, :]
 
         u_k_np = scaler_y.inverse_transform(u_pred_last_scaled.cpu().numpy())
-        if u_min is not None or u_max is not None:
-            u_k_np = np.clip(u_k_np, a_min=u_min, a_max=u_max)
+        
+        u_k_np = np.clip(u_k_np, a_min=u_min_arr, a_max=u_max_arr)
 
         u_applied[:, k, :] = u_k_np
         u_k_tensor = torch.tensor(u_k_np, dtype=torch.float32, device=device)
