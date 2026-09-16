@@ -299,7 +299,7 @@ def validate_controller_ext_ref_multi(
 
 
 
-    u_min_arr, u_max_arr = extract_mimo_control_bounds(hyperparam_config, control_dim)
+    
 
     # --- 1. FORMAT REFERENCE TARGET (y_ref) ---
     def _to_3d_ref(ref):
@@ -352,6 +352,8 @@ def validate_controller_ext_ref_multi(
     y_achieved_dict = {}
     states_achieved_dict = {}
     summary_records = []
+
+    u_min_arr, u_max_arr = extract_mimo_control_bounds(hyperparam_config, control_dim)
 
     # --- 4. MULTI-MODEL SIMULATION LOOP ---
     for model_name, model_cfg in models_dict.items():

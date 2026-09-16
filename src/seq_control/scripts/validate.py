@@ -91,11 +91,11 @@ def main():
                     "x_scaler" : load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/TrophophasePlant_ic/TransformerInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_x.pkl"),
                     "y_scaler": load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/TrophophasePlant_ic/TransformerInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_y.pkl")
                 },
-                "ESNInverseController": {
-                    "model": load_model_esn(ESNInverseController, f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/TrophophasePlant_ic/ESNInverseController/fold_1/{REF_mod_date_and_time}_best_fold_model.pkl"),
-                    "x_scaler" : load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/TrophophasePlant_ic/ESNInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_x.pkl"),
-                    "y_scaler": load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/TrophophasePlant_ic/ESNInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_y.pkl")
-                }
+                # "ESNInverseController": {
+                #     "model": load_model_esn(ESNInverseController, f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/TrophophasePlant_ic/ESNInverseController/fold_1/{REF_mod_date_and_time}_best_fold_model.pkl"),
+                #     "x_scaler" : load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/TrophophasePlant_ic/ESNInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_x.pkl"),
+                #     "y_scaler": load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/TrophophasePlant_ic/ESNInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_y.pkl")
+                # }
             }
         },
         "IdiophasePlant": {
@@ -133,11 +133,11 @@ def main():
                     "x_scaler" : load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/IdiophasePlant_ic/TransformerInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_x.pkl"),
                     "y_scaler": load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/IdiophasePlant_ic/TransformerInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_y.pkl")
                 },
-                "ESNInverseController": {
-                    "model": load_model_esn(ESNInverseController, f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/IdiophasePlant_ic/ESNInverseController/fold_1/{REF_mod_date_and_time}_best_fold_model.pkl"),
-                    "x_scaler" : load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/IdiophasePlant_ic/ESNInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_x.pkl"),
-                    "y_scaler": load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/IdiophasePlant_ic/ESNInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_y.pkl")
-                }
+                # "ESNInverseController": {
+                #     "model": load_model_esn(ESNInverseController, f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/IdiophasePlant_ic/ESNInverseController/fold_1/{REF_mod_date_and_time}_best_fold_model.pkl"),
+                #     "x_scaler" : load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/IdiophasePlant_ic/ESNInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_x.pkl"),
+                #     "y_scaler": load_scaler(f"src/seq_control/results/{REF_mod_date}/{REF_mod_date_and_time}/IdiophasePlant_ic/ESNInverseController/fold_1/scalers/{REF_mod_date_and_time}_scaler_y.pkl")
+                # }
             }
         },
         "CoCultivationPlant": {
@@ -231,21 +231,22 @@ def main():
         }
     }
 
-    for pl in plant_dict.keys():
-        print(f"Validating plant: {pl}")
-        validate_multiple_controllers(
-            models_dict=plant_dict[pl]["models_dict"],
-            plant=plant_dict[pl]["plant"],
-            dataset_io=plant_dict[pl]["val_data_io"],
-            hyperparam_config=plant_dict[pl]["plant"].hyperparam_config,
-            dirname=f"results/multi_model_validation_{pl}",
-            start_idx=2,
-            window_len=100,
-            mode="closed_loop",
-            show_plots=True
-        )
+    # for pl in plant_dict.keys():
+    #     print(f"Validating plant: {pl}")
+    #     validate_multiple_controllers(
+    #         models_dict=plant_dict[pl]["models_dict"],
+    #         plant=plant_dict[pl]["plant"],
+    #         dataset_io=plant_dict[pl]["val_data_io"],
+    #         hyperparam_config=plant_dict[pl]["plant"].hyperparam_config,
+    #         dirname=f"results/multi_model_validation_{pl}",
+    #         start_idx=2,
+    #         window_len=1000,
+    #         mode="closed_loop",
+    #         show_plots=True
+    #     )
 
-        
+    for mod in plant_dict["IdiophasePlant"]["models_dict"].keys():
+        count_seq_model_params(plant_dict["TrophophasePlant"]["models_dict"][mod]["model"])
     # validate_multiple_controllers(
     #     models_dict=plant_dict["models_dict"],
     #     plant=plant_dict["TrophophasePlant"]["plant"],
@@ -278,8 +279,8 @@ def main():
     #         y_ref=plant_dict[pl]["y_ref"],
     #         hyperparam_config=plant_dict[pl]["plant"].hyperparam_config,
     #         dirname=f"./plots_ref_multi_{pl}",
-    #         start_idx=20,
-    #         window_len=10,
+    #         start_idx=2,
+    #         window_len=1000,
     #         mode="closed_loop",
     #         show_plots=False
     #     )
