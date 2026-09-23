@@ -190,14 +190,14 @@ class ChemostatPlant:
 hyperparam_config_ChemostatPlant = {
     # Plant model parameters
     "plant" :{
-        "mu_max": 0.5,                      # Maximum growth rate [1/h]
-        "Ks": 0.2,                          # Half-saturation constant 
-        "Y": 0.6,                           # Yield coefficient
-        "sR": 1.0,
+        "mu_max": 0.5,                      # Maximum growth rate [h^{-1}]
+        "Ks": 0.2,                          # Half-saturation constant [g substrate L^{-1}]
+        "Y": 0.6,                           # Yield coefficient [g biomass (g substrate)^{-1}]
+        "sR": 1.0,                          # Feed substrate concentration [g substrate L^{-1}]
 
         "initial_state": [
-                        0.3,                # Initial biomass concentration [g/L] 
-                        0.3                 # Initial substrate mass concentration [g/L]
+                        0.3,                # Initial biomass concentration [g biomass L^{-1}] 
+                        0.3                 # Initial substrate mass concentration [g substrate L^{-1}]
                         ]
         },
 
@@ -220,10 +220,13 @@ hyperparam_config_ChemostatPlant = {
         "u_1_hard_max": 1,
 
         "x_1_hard_min" : 0,
-        "x_2_hard_min" : None,
+        "x_2_hard_min" : 0,
 
         "x_1_hard_min" : 0,
-        "x_2_hard_min" : None,
+        "x_1_hard_max" : None,
+
+        "x_2_hard_min" : 0,
+        "x_2_hard_max" : None,
 
         "y_1_hard_min": 0,
         "y_1_hard_max": 0.5,
@@ -233,8 +236,8 @@ hyperparam_config_ChemostatPlant = {
     },
 
     "train": {
-        "k_folds": 2,                       # Number of cross-validation folds
-        "epochs": 20,                       # Maximum number of epochs
+        "k_folds": 3,                       # Number of cross-validation folds
+        "epochs": 50,                       # Maximum number of epochs
         "lr": 1e-3,                         # Maximum learning rate of Adam
         "device": "cuda",                   # Device    
         "mini_batch_size": 1,               # Number of sequences evaluated per epoch
@@ -248,60 +251,68 @@ hyperparam_config_ChemostatPlant = {
     },
 
     # Default hyperparameters for Mamba-based sequence models
-    "mamba": {
+    "MambaInverseController": {
         "d_state": 31,                      
         "expand": 9,
         "d_conv" : 9
     },
     # Hyperparameter space of the Mamba sequence model for hyperparameter tuning via Optuna
-    "mamba_param_space" : {
+    "MambaInverseController_param_space" : {
         "mamba.d_conv":  {"type": "int", "low": 1, "high": 10},
         "mamba.d_state": {"type": "int", "low": 1, "high": 64},
         "mamba.expand":  {"type": "int", "low": 1, "high": 10},
         },
     # Default hyperparameters for LSTM-based sequence model
-    "lstm": {
+    "LSTMInverseController": {
         "hidden_size": 64,
         "num_layers": 2,
         "dropout": 0.1,
     },
     # Hyperparameter space of the LSTM sequence model for hyperparameter tuning via Optuna
-    "lstm_param_space" : {
+    "LSTMInverseController_param_space" : {
         "lstm.hidden_size": {"type": "int", "low": 16, "high": 128},
         "lstm.num_layers": {"type": "int", "low": 1, "high": 4},
         "lstm.dropout": {"type": "float", "low": 0.0, "high": 0.5},
     },
     # Default hyperparameters for Transformer-based sequence model 
-    "transformer": {
+    "TransformerInverseController": {
                     "nhead" : 2,
                     "num_layers" : 6,
                     "dim_feedforward" : 256,
                     "max_seq_len" : 2000
                 },
     # Hyperparameter space of the Transformer sequence model for hyperparameter tuning via Optuna                
-    "transformer_param_space":  {
+    "TransformerInverseController_param_space":  {
         "transformer.nhead":           {"type": "categorical", "choices": [1, 2, 3]}, # Must divide d_model
         "transformer.num_layers":      {"type": "int", "low": 1, "high": 4},
         "transformer.dim_feedforward": {"type": "categorical", "choices": [64, 128, 256]},
         },
     # Default hyperparameters for ESN-based sequence model 
-    "esn": {
+    "ESNInverseController": {
         "units": 200,   
         "lr": 0.5,
         "sr": 0.9,
         "ridge": 1e-7,    # Regularization coefficient  
     },
 
+    "ESNInverseController_param_space": {
+        "esn.units": {"type": "int", "low": 50, "high": 500},
+        "esn.lr": {"type": "float", "low": 0.01, "high": 1.0},
+        "esn.sr": {"type": "float", "low": 0.1, "high": 1.0}
+    },
+
+    
+
     "validation_trajectories" : {
         "batch_size": 10,
         "seq_len"   : 301,
 
-        "set_point" : [0.19],
+        "constant_value" : [0.23],
         "amplitude" : [0.04],
         "period"    : [20.0],
 
-        "y_start"   : [0.3],
-        "y_target"  : [0.19],
-        "tau"       : [0.1]         
+        "y_start"   : [0.19],
+        "y_target"  : [0.17],
+        "tau"       : [0.9]         
     },
 }

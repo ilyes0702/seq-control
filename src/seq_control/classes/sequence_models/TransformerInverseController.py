@@ -18,7 +18,7 @@ class TransformerInverseController(nn.Module):
         self.output_dim = hyperparam_config["training_data_cfg"]["output_dim"] # Dimension of plant control u
         
         # Transformer-specific hyperparams with sensible fallbacks
-        trans_cfg = hyperparam_config["transformer"]
+        trans_cfg = hyperparam_config["TransformerInverseController"]
         self.nhead = trans_cfg["nhead"]
         self.num_layers = trans_cfg["num_layers"]
         self.dim_feedforward = trans_cfg["dim_feedforward"]

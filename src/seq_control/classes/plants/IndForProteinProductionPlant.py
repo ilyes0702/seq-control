@@ -434,7 +434,7 @@ hyperparam_config_IndForProteinProductionPlant = {
     "validation_trajectories" : {
             "batch_size": 10,
             "seq_len"   : 1501,
-            "set_point" : [5, 0.3, 0.1],
+            "constant_value" : [5, 0.3, 0.1],
             "amplitude" : [1, 0.01, 0.01],
             "period"    : [20.0, 20.0, 20.0],
     

@@ -237,15 +237,15 @@ class TrophophasePlant:
 hyperparam_config_TrophophasePlant = {
     "plant" :{
         # Source of model parameters: Rothfuß, R. (1997). Anwendung der flachheitsbasierten Analyse und Regelung nichtlinearer Mehrgrößensysteme (Als Ms. gedr). VDI-Verl.
-        "mu_max": 0.12,                 # Maximum growth rate [1/h]
-        "Ks": 50,                       # Affinity constant [(mg S)/L]
-        "m_S": 23.0,                    # Maintenance coefficient [(mg S)/(g TS h)]
-        "p1": 0.00047,                  # Yield coefficient of substrate [(g TS)/(mg S)]
-        "p2": 200000.0,                 # Feed concentration of substrate [(mg S)/L]
+        "mu_max": 0.12,                 # Maximum growth rate [h^{-1}]
+        "Ks": 50,                       # Affinity constant [(mg S) L^{-1}]
+        "m_S": 23.0,                    # Maintenance coefficient [(mg S) (g TS)^{-1} h^{-1}]
+        "p1": 0.00047,                  # Yield coefficient of substrate [(g TS) (mg S)^{-1}]
+        "p2": 200000.0,                 # Feed concentration of substrate [(mg S) (mg S)^{-1}]
         
         "initial_state": [
-                        1500.0, 
-                        2000.0
+                        1500.0,         # Initial biomass mass [g TS]
+                        2000.0          # Initial substrate mass [mg S]
                         ],
     },
 
@@ -270,6 +270,9 @@ hyperparam_config_TrophophasePlant = {
         "x_1_hard_min": 0,
         "x_1_hard_max": None,
 
+        "x_2_hard_min": 0,
+        "x_2_hard_max": None,
+
         "y_1_hard_min": 0,
         "y_1_hard_max": 0.12,
 
@@ -278,8 +281,8 @@ hyperparam_config_TrophophasePlant = {
     },
 
     "train": {
-        "k_folds": 2,
-        "epochs": 100,
+        "k_folds": 3,
+        "epochs": 50,
         "lr": 1e-3,
         "device": "cuda", 
         "mini_batch_size": 1,
@@ -294,59 +297,61 @@ hyperparam_config_TrophophasePlant = {
     },
 
     # Default hyperparameters for Mamba-based sequence models
-    "mamba": {
-            "d_state": 31,                      
-            "expand": 9,
-            "d_conv" : 9
-        },
-
+    "MambaInverseController": {
+        "d_state": 31,                      
+        "expand": 9,
+        "d_conv" : 9
+    },
     # Hyperparameter space of the Mamba sequence model for hyperparameter tuning via Optuna
-        "mamba_param_space" : {
-            "mamba.d_conv":  {"type": "int", "low": 1, "high": 10},
-            "mamba.d_state": {"type": "int", "low": 1, "high": 64},
-            "mamba.expand":  {"type": "int", "low": 1, "high": 10},
-            },
-
+    "MambaInverseController_param_space" : {
+        "mamba.d_conv":  {"type": "int", "low": 1, "high": 10},
+        "mamba.d_state": {"type": "int", "low": 1, "high": 64},
+        "mamba.expand":  {"type": "int", "low": 1, "high": 10},
+        },
     # Default hyperparameters for LSTM-based sequence model
-    "lstm": {
+    "LSTMInverseController": {
         "hidden_size": 64,
         "num_layers": 2,
         "dropout": 0.1,
     },
     # Hyperparameter space of the LSTM sequence model for hyperparameter tuning via Optuna
-    "lstm_param_space" : {
+    "LSTMInverseController_param_space" : {
         "lstm.hidden_size": {"type": "int", "low": 16, "high": 128},
         "lstm.num_layers": {"type": "int", "low": 1, "high": 4},
         "lstm.dropout": {"type": "float", "low": 0.0, "high": 0.5},
     },
-
     # Default hyperparameters for Transformer-based sequence model 
-    "transformer": {
+    "TransformerInverseController": {
                     "nhead" : 2,
                     "num_layers" : 6,
                     "dim_feedforward" : 256,
                     "max_seq_len" : 2000
                 },
     # Hyperparameter space of the Transformer sequence model for hyperparameter tuning via Optuna                
-    "transformer_param_space":  {
+    "TransformerInverseController_param_space":  {
         "transformer.nhead":           {"type": "categorical", "choices": [1, 2, 3]}, # Must divide d_model
         "transformer.num_layers":      {"type": "int", "low": 1, "high": 4},
         "transformer.dim_feedforward": {"type": "categorical", "choices": [64, 128, 256]},
         },
-
     # Default hyperparameters for ESN-based sequence model 
-    "esn": {
+    "ESNInverseController": {
         "units": 200,   
         "lr": 0.5,
         "sr": 0.9,
         "ridge": 1e-7,    # Regularization coefficient  
     },
 
+    "ESNInverseController_param_space": {
+        "esn.units": {"type": "int", "low": 50, "high": 500},
+        "esn.lr": {"type": "float", "low": 0.01, "high": 1.0},
+        "esn.sr": {"type": "float", "low": 0.1, "high": 1.0}
+    },
+
     "validation_trajectories" : {
             "batch_size": 10,
             "seq_len"   : 2001,
             
-            "set_point" : [0.015],
+            "constant_value" : [0.015],
             "amplitude" : [0.004],
             "period"    : [20.0],
     

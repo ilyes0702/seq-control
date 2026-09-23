@@ -1,0 +1,6 @@
+2026-09-21 11:18:51 - Beginning of data generation script
+2026-09-21 11:18:54 - 
+2026-09-21 11:18:54 - Starting plant instances initialization...
+2026-09-21 11:18:55 - Finished plant instances initialization.
+2026-09-21 11:18:55 - Starting training data generation...
+2026-09-21 11:19:25 - Finished training data generation.

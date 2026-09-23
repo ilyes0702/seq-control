@@ -5,39 +5,24 @@ This script selects benchmark plant model and generates and saves data for train
 """
 
 # Import utilities
-from seq_control.utils.saving_and_loading_utils import *
 from seq_control.utils.data_generation_utils import *
 from seq_control.utils.plotting_utils import *
 
-# Import plants
-from seq_control.classes.plants.ChemostatPlant import *
-from seq_control.classes.plants.IdiophasePlant import *
-from seq_control.classes.plants.TrophophasePlant import *
-from seq_control.classes.plants.CocultivationPlant import *
-from seq_control.classes.plants.IndForProteinProductionPlant import *
+# Import dictionaries
+from seq_control.dicts.plant_dict import *
 
 def main() -> None:
-	"""Create plant instances and generate training data.
+	"""Generate training data.
 	"""
 
 	log_message("Beginning of data generation script")
-	description = get_run_description()
-	log_message("Starting plant instances initialization...")
+	get_run_description()
 
-	# 1. Define which plants to study and the respective configuration dictionaries
-	plant_list = [
-		ChemostatPlant(hyperparam_config=hyperparam_config_ChemostatPlant),
-		TrophophasePlant(hyperparam_config=hyperparam_config_TrophophasePlant),
-		IdiophasePlant(hyperparam_config=hyperparam_config_IdiophasePlant),
-		CoCultivationPlant(hyperparam_config=hyperparam_config_CoCultivationPlant),
-		IndForProteinProductionPlant(hyperparam_config=hyperparam_config_IndForProteinProductionPlant)
-	]
-
-	log_message("Finished plant instances initialization.")
 	log_message("Starting training data generation...")
 
 	# 2. Generate data for the plants defined in plant_list. The data for plant pl can be then found in the folder results/YYYY-MM-DD/YYYY-MM-DD/<pl.__class__.__name__>
-	for pl in plant_list:
+	for plant_name, plant_data in plant_dict.items():
+		pl = plant_data["plant"]
 		dirname = pl.__class__.__name__
 		hyperparam_config = pl.hyperparam_config
 		save_to_json(hyperparam_config, dirname, "training_data_hyperparam_config")

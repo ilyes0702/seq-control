@@ -1,4 +1,3 @@
-
 from reservoirpy.nodes import Reservoir, Ridge
 
 class ESNInverseController:
@@ -8,10 +7,10 @@ class ESNInverseController:
         """
         
         # Hyperparameters specific to ESN
-        self.units = hyperparam_config["esn"]["units"]  # Number of reservoir units
-        self.lr = hyperparam_config["esn"]["lr"]
-        self.sr = hyperparam_config["esn"]["sr"]
-        self.ridge = hyperparam_config["esn"]["ridge"]    # Regularization coefficient
+        self.units = hyperparam_config["ESNInverseController"]["units"]  # Number of reservoir units
+        self.lr = hyperparam_config["ESNInverseController"]["lr"]
+        self.sr = hyperparam_config["ESNInverseController"]["sr"]
+        self.ridge = hyperparam_config["ESNInverseController"]["ridge"]    # Regularization coefficient
         
         # Initialize ReservoirPy Nodes
         # The input dimension to the reservoir will automatically adapt when data is first passed or during connection.
@@ -50,7 +49,7 @@ class ESNInverseController:
         
         # ReservoirPy fits the readout instantly via offline linear regression
         self.model = self.model.fit(X_train_list, Y_train_list)
-
+    
     def forward(self, x):
         """
         Run the ESN forward pass on a single sequence sample.

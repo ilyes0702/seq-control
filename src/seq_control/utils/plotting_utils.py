@@ -387,7 +387,7 @@ def plot_all_signals_overlay(
 
         # Overlay individual sequence trajectories
         for s_idx in range(num_seqs):
-            label = "Validated Sequences" if s_idx == 0 else None
+            label = None if s_idx == 0 else None
             ax.plot(
                 time_axis,
                 sig_data[s_idx, :],
@@ -405,7 +405,7 @@ def plot_all_signals_overlay(
             color="black",
             linestyle="--",
             linewidth=2.0,
-            label="Ensemble Mean",
+            label="Mean",
         )
 
         ax.set_ylabel(ylabel)
@@ -861,7 +861,8 @@ def plot_closed_loop_trajectories_multi(
             filename=f"multi_model_trajectory_seq_{seq_idx + 1}",
             show=show,
             asp=0.33,
-            hspace=0.08
+            hspace=0.08,
+            legend_below=True
         )
 
 
@@ -879,6 +880,7 @@ def plot_stacked(
     dirname=None,
     asp=0.33,
     hspace=0.05,
+    legend_below=False,
 ):
     """
     Generic plotting function that stacks various subplots vertically sharing a unified x-axis.
@@ -923,6 +925,9 @@ def plot_stacked(
     :param hspace: Vertical padding space separating adjacent stacked subplots, 
         defaults to 0.05.
     :type hspace: float, optional
+    :param legend_below: If ``True``, place the legend below the lowest subplot;
+        otherwise place it on the top subplot, defaults to ``False``.
+    :type legend_below: bool, optional
 
     :return: A high-resolution raster image object version of the stacked multi-trace plot.
     :rtype: PIL.Image.Image
@@ -986,13 +991,23 @@ def plot_stacked(
             )
             ax.plot(t, sig, label=lbl)
 
-        # === LEGEND ONLY ON TOP SUBPLOT ===
+        # === LEGEND ON TOP OR BELOW THE LOWEST SUBPLOT ===
         if (
-            i == 0
+            (i == num_subplots - 1 if legend_below else i == 0)
             and row_labels is not None
             and any(lbl is not None for lbl in row_labels)
         ):
-            ax.legend(loc="upper right")
+            if legend_below:
+                ax.legend(
+                    loc="upper center",
+                    bbox_to_anchor=(0.5, -0.25),
+                    # Keep entries stacked so the legend does not grow wider
+                    # than the subplot when there are many labels.
+                    ncol=1,
+                )
+                fig.subplots_adjust(bottom=0.2)
+            else:
+                ax.legend(loc="upper right")
 
         # === SET Y-AXIS LABEL ===
         if isinstance(ylabel, (list, tuple)) and len(ylabel) == num_subplots:

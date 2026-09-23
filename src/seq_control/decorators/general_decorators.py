@@ -72,7 +72,7 @@ def track_resources(func):
         print("\n" + "🚀" + " ="*20)
         print(f"RESOURCE REPORT: {func.__name__}")
         print(f"⏱️  Time Used:  {gpu_sec:.2f} GPU-seconds")
-        print(f"💾 Peak VRAM:  {peak_mb:.2f} GB")
+        print(f"💾 Peak VRAM:  {peak_mb:.2f} MB")
         print(" ="*20 + "\n")
         
         # Return results + a dictionary of metrics for easy logging

@@ -19,7 +19,7 @@ class LSTMInverseController(nn.Module):
         self.output_dim = hyperparam_config["training_data_cfg"]["output_dim"] # Dimension of plant control u
         
         # LSTM-specific hyperparams with sensible fallbacks
-        lstm_cfg = hyperparam_config["lstm"]
+        lstm_cfg = hyperparam_config["LSTMInverseController"]
         self.hidden_dim = lstm_cfg["hidden_size"]
         self.num_layers = lstm_cfg["num_layers"]
         self.dropout = lstm_cfg["dropout"] if self.num_layers > 1 else 0.0

@@ -435,7 +435,7 @@ hyperparam_config_CoCultivationPlant = {
         "batch_size": 10,
         "seq_len"   : 2001,
         
-        "set_point" : [1, 6],
+        "constant_value" : [1, 6],
         "amplitude" : [0.5, 0.5],
         "period"    : [20.0, 20.0],
 

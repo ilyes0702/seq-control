@@ -24,7 +24,6 @@ from seq_control.utils.general_utils import *
 from seq_control.utils.data_generation_utils import *
 
 #=== FUNCTION TO TRAIN SEQUENCE MODEL WITH K-FOLD CROSS VALIDATION ===#
-@track_resources
 def train_sequence_model(
     model,
     plant,
@@ -372,7 +371,7 @@ def train_sequence_model(
 
 #=== FUNCTION TO TRAIN SEQUENCE MODEL ON A DATASET ===#
 def train_full_dataset(model, 
-                       dataset,
+                       sw_dataset,
                        hyperparam_config, 
                        dirname="./final_model"):
     """Retrain the final inverse controller model on the entire dataset for production deployment.
@@ -407,7 +406,7 @@ def train_full_dataset(model,
     """
     train_cfg = hyperparam_config["train"]
     lr = train_cfg["lr"]
-    epochs = train_cfg["epochs"]
+    epochs = 20
     nu_y = train_cfg["nu_y"]
     nu_u = train_cfg["nu_u"]
     batch_size = train_cfg["mini_batch_size"]
@@ -421,7 +420,7 @@ def train_full_dataset(model,
     print("==========================================")
     
     # 1. Slicing full dataset
-    X_raw, Y_raw = dataset["X_raw"], dataset["X_raw"]
+    X_raw, Y_raw = sw_dataset["X_raw"], sw_dataset["Y_raw"]
     
     N_total, seq_len, dim_x = X_raw.shape
     dim_y = Y_raw.shape[-1]
@@ -448,7 +447,6 @@ def train_full_dataset(model,
     device = "cuda"
     model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=train_cfg["lr_decay_rate"])
     
     loss_name = train_cfg["loss_function"].replace("()", "")
     criterion = NormalizedRMSELoss(reduction='none') if loss_name == "NormalizedRMSELoss" else getattr(nn, loss_name)(reduction='none')
@@ -477,7 +475,6 @@ def train_full_dataset(model,
             
             epoch_loss_accum += loss.item() * current_bs
             
-        scheduler.step()
         mean_epoch_loss = epoch_loss_accum / N_total
         
         if (epoch + 1) % 5 == 0 or epoch == epochs - 1:
@@ -491,11 +488,9 @@ def train_full_dataset(model,
     return model
 
 #=== FUNCTION TO TRAIN AN ESN WITH K-FOLD CROSS-VALIDATION ===#
-@track_resources
 def train_controller_esn(
     model,
-    X_raw,                # Shape: [Total_Seqs, Seq_Len, feature_dim]
-    Y_raw,                # Shape: [Total_Seqs, Seq_Len, num_control_inputs]
+    sw_dataset,                # Shape: [Total_Seqs, Seq_Len, num_control_inputs]
     hyperparam_config,
     dirname,
     plant=None,           # Optional plant instance with get_plot_config()
@@ -507,6 +502,8 @@ def train_controller_esn(
     dt = hyperparam_config["training_data_cfg"]["dt"]
     k_folds = hyperparam_config["train"]["k_folds"]
 
+    X_raw = sw_dataset["X_raw"]  # Shape: [Total_Seqs, Seq_Len, num_features]
+    Y_raw = sw_dataset["Y_raw"]  # Shape: [Total_Seqs, Seq_Len, num_control_inputs]
     # --- DYNAMICALLY DERIVE ACTUAL ARRAY DIMENSIONS ---
     num_control_inputs = Y_raw.shape[-1]              # Actual target control channels (u)
     feature_dim = X_raw.shape[-1]                     # Total feature vector size
@@ -665,35 +662,97 @@ def train_controller_esn(
     return fold_histories
 
 #=== FUNCTION TO DEFINE OBJECTIVE FUNCTION FOR OPTUNA-BASED HYPERPARAMETER OPTIMIZATION ===#
-def objective(trial, 
-              model_class, 
-              dataset,
-              base_config, 
-              plant, 
-              dirname, 
-              param_space):
-    """
-    Modular Optuna objective function sampling hyperparameters from a space dict.
-    """
-    def set_nested_value(d, keys, value):
-        """Helper to set a value in a nested dictionary given a list/path of keys."""
-        for key in keys[:-1]:
-            d = d.setdefault(key, {})
-        d[keys[-1]] = value
+import copy
+import numpy as np
+import optuna
 
+def set_nested_value(d, keys, value):
+    """Helper to set a value in a nested dictionary given a list/path of keys."""
+    for key in keys[:-1]:
+        d = d.setdefault(key, {})
+    d[keys[-1]] = value
+
+
+import os
+from sklearn.preprocessing import StandardScaler
+
+def train_full_esn(model, dataset, hyperparam_config, dirname):
+    """
+    Fits StandardScalers on the complete dataset and trains the ESN readout layer.
+    """
+    X_raw, Y_raw = dataset
+    N_samples, seq_len, dim_x = X_raw.shape
+    dim_y = Y_raw.shape[-1]
+
+    # Fit scalers on entire dataset
+    scaler_x = StandardScaler().fit(X_raw.reshape(-1, dim_x))
+    scaler_y = StandardScaler().fit(Y_raw.reshape(-1, dim_y))
+
+    # Transform data
+    X_scaled = scaler_x.transform(X_raw.reshape(-1, dim_x)).reshape(N_samples, seq_len, dim_x)
+    Y_scaled = scaler_y.transform(Y_raw.reshape(-1, dim_y)).reshape(N_samples, seq_len, dim_y)
+
+    X_list = [X_scaled[i] for i in range(N_samples)]
+    Y_list = [Y_scaled[i] for i in range(N_samples)]
+
+    # Reset model states and perform analytical fit
+    model.load_state_dict(None)
+    model.fit(X_list, Y_list)
+
+    # Save artifacts
+    os.makedirs(dirname, exist_ok=True)
+    save_to_json(hyperparam_config, dirname, "hyperparam_config_final")
+    save_scaler_object(scaler_x, dirname=dirname, filename="scaler_x")
+    save_scaler_object(scaler_y, dirname=dirname, filename="scaler_y")
+    save_model_esn(model, dirname=dirname, hyperparam_config=hyperparam_config, filename="final_production_model")
+
+    return model
+
+import copy
+import numpy as np
+import optuna
+
+def set_nested_value(d, keys, value):
+    """Helper to set a value in a nested dictionary given a list/path of keys."""
+    for key in keys[:-1]:
+        d = d.setdefault(key, {})
+    d[keys[-1]] = value
+
+
+import copy
+import os
+import numpy as np
+import optuna
+from sklearn.preprocessing import StandardScaler
+
+def set_nested_value(d, keys, value):
+    """Helper to set a value in a nested dictionary given a list/path of keys."""
+    for key in keys[:-1]:
+        d = d.setdefault(key, {})
+    d[keys[-1]] = value
+
+
+# === OPTUNA OBJECTIVE FUNCTION === #
+def objective(
+    trial, 
+    model_class, 
+    dataset,
+    base_config, 
+    plant, 
+    dirname, 
+    param_space
+):
+    """
+    Modular Optuna objective function handling both PyTorch models and ESN.
+    """
     config = copy.deepcopy(base_config)
 
     # --- 1. DYNAMICALLY SAMPLE HYPERPARAMETERS FROM PARAM_SPACE ---
     for param_path, spec in param_space.items():
-        # Split path string (e.g., "mamba.d_state") into list of keys
         keys = param_path.split(".") if isinstance(param_path, str) else param_path
-        
-        # Determine parameter name for Optuna logs
-        param_name = keys[-1] if isinstance(keys, list) else keys
+        param_name = param_path if isinstance(param_path, str) else ".".join(keys)
         
         param_type = spec["type"]
-        
-        # Sample using appropriate Optuna method
         if param_type == "int":
             val = trial.suggest_int(param_name, spec["low"], spec["high"], step=spec.get("step", 1), log=spec.get("log", False))
         elif param_type == "float":
@@ -703,64 +762,110 @@ def objective(trial,
         else:
             raise ValueError(f"Unsupported parameter type: {param_type}")
 
-        # Insert sampled value into the nested config dictionary
+        # Insert sampled value into nested config dictionary
         set_nested_value(config, keys, val)
 
-    # Dynamic directory for each trial
     trial_dirname = f"{dirname}/trial_{trial.number}"
-
-    # Re-instantiate model with updated config
     model = model_class(config)
 
-    # --- 2. EXECUTE CONTROLLER TRAINING ---
+    # --- 2. EXECUTE CONTROLLER TRAINING BASED ON MODEL CLASS ---
+    if model_class.__name__ == "ESNInverseController":
 
-    fold_histories, dict, mean_cv_val_loss, df = train_sequence_model(
-        model=model,
-        plant=plant,
-        sw_ic_dataset=dataset,
-        hyperparam_config=config,
-        dirname=trial_dirname,
-        show_plots=False
-    )
+        fold_histories = train_controller_esn(
+            model=model,
+            sw_dataset=dataset,
+            hyperparam_config=config,
+            dirname=trial_dirname,
+            plant=plant,
+            save_test_plots=False
+        )
+
+        # Extract validation loss across all folds from fold_histories values
+        val_losses = [hist["val_loss"][0] for hist in fold_histories.values()]
+        mean_cv_val_loss = float(np.mean(val_losses))
+
+    else:
+        # Standard PyTorch sequence model path
+        res = train_sequence_model(
+            model=model,
+            plant=plant,
+            sw_dataset=dataset,
+            hyperparam_config=config,
+            dirname=trial_dirname,
+            show_plots=False
+        )
+
+        if isinstance(res, tuple) and len(res) >= 3:
+            mean_cv_val_loss = res[2]
+        elif isinstance(res, (float, int, np.floating)):
+            mean_cv_val_loss = float(res)
+        else:
+            raise ValueError(f"Unexpected return type from train_sequence_model: {type(res)}")
 
     return mean_cv_val_loss
 
 
-#=== FUNCTION TO RUN HYPERPARAMETER OPTIMIZATION STUDY USING OPTUNA ===#
-def run_optuna_study(
-        model_class,
-        dataset,
-        hyperparam_config,
-        plant,
-        n_trials
-    ):
-    # Setup directories
-    optuna_dir = "./optuna_trials"
-    final_dir = "./final_production_model"
-    n_trials = n_trials  # Set desired trials limit
-    
-    print("🛠️ Initializing Optuna Study (TPE Sampler)...")
-    study = optuna.create_study(
-        study_name="controller_hyperparam_tuning",
-        direction="minimize",
-        sampler=optuna.samplers.TPESampler(seed=42)
-    )
+# === HELPER FOR ESN FULL RETRAINING === #
+def train_full_esn(model, sw_dataset, hyperparam_config, dirname):
+    """Retrains ESN model on full dataset without cross-validation."""
+    X_raw, Y_raw = sw_dataset["X_raw"], sw_dataset["Y_raw"]
+    N_samples, seq_len, dim_x = X_raw.shape
+    dim_y = Y_raw.shape[-1]
 
-    # 1. Run Bayesian Optimization via Optuna
+    scaler_x = StandardScaler().fit(X_raw.reshape(-1, dim_x))
+    scaler_y = StandardScaler().fit(Y_raw.reshape(-1, dim_y))
+
+    X_scaled = scaler_x.transform(X_raw.reshape(-1, dim_x)).reshape(N_samples, seq_len, dim_x)
+    Y_scaled = scaler_y.transform(Y_raw.reshape(-1, dim_y)).reshape(N_samples, seq_len, dim_y)
+
+    X_list = [X_scaled[i] for i in range(N_samples)]
+    Y_list = [Y_scaled[i] for i in range(N_samples)]
+
+    model.load_state_dict(None)
+    model.fit(X_list, Y_list)
+
+    os.makedirs(dirname, exist_ok=True)
+    save_to_json(hyperparam_config, dirname, "hyperparam_config_final")
+    save_scaler_object(scaler_x, dirname=dirname, filename="scaler_x")
+    save_scaler_object(scaler_y, dirname=dirname, filename="scaler_y")
+    save_model_esn(model, dirname=dirname, hyperparam_config=hyperparam_config, filename="final_production_model")
+
+    return model
+
+
+# === OPTUNA STUDY RUNNER === #
+@track_resources
+def run_optuna_study(
+    model_class,
+    dataset,
+    base_config,
+    plant,
+    dirname,
+    param_space,
+    n_trials=20
+):
+    """
+    Executes an Optuna hyperparameter study, exports summary CSV reports,
+    and trains the final model using the best hyperparameters.
+    """
+    # --- 1. INITIALIZE OPTUNA STUDY ---
+    study = optuna.create_study(direction="minimize")
+
+    # --- 2. RUN OPTIMIZATION ---
     study.optimize(
         lambda trial: objective(
-            trial=trial,
-            model_class=model_class, 
-            dataset=dataset,
-            base_config=hyperparam_config,
-            plant=plant,
-            dirname=optuna_dir,
-            param_space=hyperparam_config["mamba_param_space"]
+            trial, 
+            model_class, 
+            dataset, 
+            base_config, 
+            plant, 
+            dirname, 
+            param_space
         ),
         n_trials=n_trials
     )
 
-    # 2. Print Summary Results
+    # --- 3. CONSOLE REPORTING ---
     print("\n==========================================")
     print("🏆 OPTUNA HYPERPARAMETER TUNING COMPLETE")
     print("==========================================")
@@ -770,31 +875,67 @@ def run_optuna_study(
     for key, value in study.best_params.items():
         print(f"   - {key}: {value}")
 
-    # 3. Export Visualizations
-    plot_param_heatmap(
-        study=study,
-        param_x="d_state",
-        param_y="expand",
-        filename="optuna_heatmap_d_state_expand",
-        dirname=optuna_dir
+    # --- 4. SAVE BEST TRIAL SUMMARY TO CSV ---
+    best_results_df = pd.DataFrame([{
+        "best_trial_number": study.best_trial.number,
+        "best_mean_cv_loss": study.best_value,
+        **study.best_params
+    }])
+
+    print(best_results_df)
+
+    save_df_to_csv(
+        df=best_results_df,
+        dirname=dirname,
+        filename="optuna_best_hyperparameters"
     )
 
-    # 4. Retrain Final Model on Full Dataset
-    # Prepare best configuration dictionary
-    best_config = copy.deepcopy(hyperparam_config)
-    best_config["mamba"].update(study.best_params)
+    # --- 5. SAVE ALL TRIALS SUMMARY TO CSV ---
+    trials_data = []
+    for trial in study.trials:
+        if trial.state.name == "COMPLETE" and trial.value is not None:
+            row = {
+                "trial_number": trial.number,
+                "mean_cv_loss": trial.value,
+                **trial.params
+            }
+            trials_data.append(row)
 
-    print("best config", best_config)
+    all_trials_df = pd.DataFrame(trials_data)
 
-    # Instantiate fresh model with the best parameters
-    best_model = model_class(best_config) ### Mamba_inverse_controller(best_config)
+    if not all_trials_df.empty:
+        # Sort so the best trial (lowest mean_cv_loss) is at the top
+        all_trials_df = all_trials_df.sort_values(by="mean_cv_loss", ascending=True)
 
-    # Train on complete dataset
-    final_model = train_full_dataset(
-        model=best_model,
-        dataset= dataset,
-        hyperparam_config=best_config,
-        dirname=final_dir
+    save_df_to_csv(
+        df=all_trials_df,
+        dirname=dirname,
+        filename="optuna_all_trials_summary"
     )
-    
+
+    # --- 6. RETRAIN FINAL MODEL WITH BEST PARAMETERS ---
+    best_config = copy.deepcopy(base_config)
+    for param_path, val in study.best_params.items():
+        keys = param_path.split(".") if isinstance(param_path, str) else param_path
+        set_nested_value(best_config, keys, val)
+
+    final_model_dir = f"{dirname}/final_best_model"
+    best_model = model_class(best_config)
+
+    if model_class.__name__ == "ESNInverseController":
+        final_model = train_full_esn(
+            model=best_model,
+            sw_dataset=dataset,
+            hyperparam_config=best_config,
+            dirname=final_model_dir
+        )
+    else:
+        # Train full PyTorch sequence model path
+        final_model = train_full_dataset(
+            model=best_model,
+            sw_dataset=dataset,
+            hyperparam_config=best_config,
+            dirname=final_model_dir,
+        )
+
     return study, final_model

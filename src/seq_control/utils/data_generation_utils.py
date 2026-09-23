@@ -549,10 +549,10 @@ def generate_io_dataset(
     plant,
     training_data_cfg,
     dirname,
-    save_sample_plot=False,
+    save_sample_plot=True,
     save_all_plots=False,
-    save_overlay_plot=False,
-    save_sequence_data=False
+    save_overlay_plot=True,
+    save_sequence_data=True
 ):
     """
     Generates, validates, and exports a raw continuous MIMO dataset.
@@ -895,7 +895,7 @@ def generate_io_dataset(
             u_tensor=final_u_tensor,  # Control Inputs u (subplot 1)
             y_tensor=final_y_tensor,  # System Outputs y (subplot 2)
             dt=plant.dt,
-            dirname="plots",
+            dirname=plots_dir,
             plot_config=plot_config,
             show_plot=True,
         )
@@ -1028,4 +1028,3 @@ def generate_io_dataset(
                  filename="sw_sysid_validation_data")
     
     return dataset_io
-
